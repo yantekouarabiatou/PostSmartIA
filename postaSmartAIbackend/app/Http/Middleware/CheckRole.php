@@ -5,11 +5,10 @@ namespace App\Http\Middleware;
 use App\Http\Resources\ApiResponse;
 use Closure;
 use Illuminate\Http\Request;
-use Symfony\Component\HttpFoundation\Response;
 
-class RoleMiddleware
+class CheckRole
 {
-    public function handle(Request $request, Closure $next, string ...$roles): Response
+    public function handle(Request $request, Closure $next, string ...$roles)
     {
         $user = $request->user();
 
@@ -18,7 +17,7 @@ class RoleMiddleware
         }
 
         if (!in_array($user->role, $roles)) {
-            return ApiResponse::forbidden('Vous n\'avez pas les permissions nécessaires pour accéder à cette ressource.');
+            return ApiResponse::forbidden('Vous n\'avez pas les permissions nécessaires.');
         }
 
         if (!$user->is_active) {

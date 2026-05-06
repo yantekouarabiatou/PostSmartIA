@@ -2,164 +2,187 @@
 
 import { useState } from "react"
 import {
-  Sparkles,
-  Copy,
-  Check,
-  RefreshCw,
-  Send,
-  ChevronDown,
-  User,
-  FileText,
-  MessageSquare,
+  Sparkles, Copy, Check, RefreshCw, Save, User, FileText,
+  MessageSquare, ChevronDown, AlertCircle,
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
+import { api, type GeneratedEmail } from "@/lib/api"
 
-const emailTypes = [
-  { value: "livraison", label: "Suivi de livraison" },
-  { value: "reclamation", label: "Réponse à réclamation" },
-  { value: "information", label: "Demande d'information" },
+const EMAIL_TYPES = [
+  { value: "livraison",    label: "Suivi de livraison"     },
+  { value: "reclamation",  label: "Réponse à réclamation"  },
+  { value: "information",  label: "Demande d'information"  },
   { value: "confirmation", label: "Confirmation de service" },
-  { value: "relance", label: "Relance client" },
-  { value: "autre", label: "Autre" },
+  { value: "relance",      label: "Relance client"          },
+  { value: "autre",        label: "Autre"                  },
 ]
 
-const tones = [
+const TONES = [
   { value: "professionnel", label: "Professionnel" },
-  { value: "empathique", label: "Empathique" },
-  { value: "formel", label: "Formel" },
-  { value: "amical", label: "Amical" },
+  { value: "empathique",    label: "Empathique"    },
+  { value: "formel",        label: "Formel"        },
+  { value: "amical",        label: "Amical"        },
 ]
-
-const sampleGeneratedEmail = `Madame Martin,
-
-Suite à votre demande concernant le suivi de votre colis n°LP123456789FR, je me permets de vous apporter les informations suivantes.
-
-Votre colis a bien été pris en charge par nos services le 15 janvier 2026. Après vérification auprès de notre service logistique, je peux vous confirmer que votre envoi est actuellement en transit et devrait être livré à l'adresse indiquée dans les 48 heures ouvrées.
-
-Vous pouvez suivre l'acheminement de votre colis en temps réel sur notre site laposte.fr ou via notre application mobile en utilisant le numéro de suivi mentionné ci-dessus.
-
-Je reste à votre entière disposition pour tout renseignement complémentaire.
-
-Cordialement,
-
-Jean Dupont
-Conseiller clientèle
-La Poste - Service Client`
 
 export default function GenerateEmailPage() {
-  const [clientName, setClientName] = useState("")
-  const [emailType, setEmailType] = useState("")
-  const [tone, setTone] = useState("professionnel")
-  const [context, setContext] = useState("")
+  const [clientName, setClientName]         = useState("")
+  const [clientEmail, setClientEmail]       = useState("")
+  const [emailType, setEmailType]           = useState("livraison")
+  const [tone, setTone]                     = useState("professionnel")
+  const [context, setContext]               = useState("")
   const [additionalInfo, setAdditionalInfo] = useState("")
-  const [generatedEmail, setGeneratedEmail] = useState("")
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [showAdvanced, setShowAdvanced]     = useState(false)
 
-  const handleGenerate = async () => {
-    setIsGenerating(true)
-    // Simulate AI generation
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-    setGeneratedEmail(sampleGeneratedEmail)
-    setIsGenerating(false)
+  const [result, setResult]       = useState<GeneratedEmail | null>(null)
+  const [generating, setGenerating] = useState(false)
+  const [saving, setSaving]         = useState(false)
+  const [saved, setSaved]           = useState(false)
+  const [copied, setCopied]         = useState(false)
+  const [genError, setGenError]     = useState("")
+  const [saveMsg, setSaveMsg]       = useState("")
+
+  async function handleGenerate() {
+    if (!context.trim()) return
+    setGenerating(true)
+    setGenError("")
+    setResult(null)
+    setSaved(false)
+    setSaveMsg("")
+    try {
+      const typeLabel = EMAIL_TYPES.find(t => t.value === emailType)?.label ?? emailType
+      const toneLabel = TONES.find(t => t.value === tone)?.label ?? tone
+
+      const emailContent = [
+        `Type d'email : ${typeLabel}`,
+        `Ton souhaité : ${toneLabel}`,
+        clientName     && `Destinataire : ${clientName}`,
+        `Contexte : ${context}`,
+        additionalInfo && `Informations complémentaires : ${additionalInfo}`,
+      ].filter(Boolean).join("\n")
+
+      const data = await api.post<GeneratedEmail>("/ai/generate-response", {
+        email_content: emailContent,
+        service_type: emailType,
+        entities: clientName
+          ? { client_name: clientName, main_request: context }
+          : undefined,
+      })
+      setResult(data)
+    } catch (err: any) {
+      setGenError(err.message || "Erreur lors de la génération. Vérifiez la clé API Groq dans .env.")
+    } finally {
+      setGenerating(false)
+    }
   }
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(generatedEmail)
+  async function handleSave() {
+    if (!result || !clientEmail.trim()) return
+    setSaving(true)
+    setSaveMsg("")
+    try {
+      await api.post("/email-histories", {
+        client_email: clientEmail,
+        client_name: clientName || undefined,
+        subject: result.subject,
+        content: result.body,
+        status: "draft",
+      })
+      setSaved(true)
+      setSaveMsg("Sauvegardé dans l'historique.")
+    } catch (err: any) {
+      setSaveMsg(err.message || "Erreur lors de la sauvegarde.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  function handleCopy() {
+    if (!result) return
+    navigator.clipboard.writeText(`Objet : ${result.subject}\n\n${result.body}`)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const handleRegenerate = async () => {
-    setIsGenerating(true)
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    setIsGenerating(false)
-  }
+  const qualityItems = result
+    ? [
+        { label: "Clarté",     value: result.quality_score.clarity,    color: "#0066CC" },
+        { label: "Empathie",   value: result.quality_score.empathy,    color: "#7C3AED" },
+        { label: "Conformité", value: result.quality_score.compliance, color: "#059669" },
+      ]
+    : []
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
+
       {/* Header */}
       <div className="space-y-1">
-        <h1 className="text-2xl lg:text-3xl font-bold text-foreground">
-          Générer un email
-        </h1>
+        <h1 className="text-2xl lg:text-3xl font-bold text-foreground">Générer un email</h1>
         <p className="text-muted-foreground">
-          Remplissez les informations ci-dessous pour générer un email personnalisé assisté par IA.
+          Décrivez le contexte et laissez l'IA rédiger un email professionnel conforme à la charte La Poste.
         </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Input Form */}
-        <div className="space-y-6">
+
+        {/* ── Formulaire gauche ── */}
+        <div className="space-y-5">
+
+          {/* Infos client */}
           <Card className="border-border/50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-foreground">
-                <User className="h-5 w-5 text-primary" />
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-foreground text-sm font-semibold">
+                <User className="h-4 w-4 text-primary" />
                 Informations client
               </CardTitle>
-              <CardDescription>
-                Entrez les détails du destinataire
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  Nom du client
-                </label>
-                <Input
-                  placeholder="Ex: Marie Martin"
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">Nom du client</label>
+                  <Input
+                    placeholder="Ex : Marie Martin"
+                    value={clientName}
+                    onChange={e => setClientName(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-foreground">
+                    Email client
+                    <span className="text-muted-foreground font-normal ml-1 text-xs">(pour sauvegarder)</span>
+                  </label>
+                  <Input
+                    type="email"
+                    placeholder="client@example.fr"
+                    value={clientEmail}
+                    onChange={e => setClientEmail(e.target.value)}
+                  />
+                </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">
-                    Type d&apos;email
-                  </label>
+                  <label className="text-sm font-medium text-foreground">Type d'email</label>
                   <Select value={emailType} onValueChange={setEmailType}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Sélectionner..." />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {emailTypes.map((type) => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.label}
-                        </SelectItem>
+                      {EMAIL_TYPES.map(t => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">
-                    Ton
-                  </label>
+                  <label className="text-sm font-medium text-foreground">Ton</label>
                   <Select value={tone} onValueChange={setTone}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {tones.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
+                      {TONES.map(t => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -168,53 +191,41 @@ export default function GenerateEmailPage() {
             </CardContent>
           </Card>
 
+          {/* Contexte */}
           <Card className="border-border/50">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-foreground">
-                <MessageSquare className="h-5 w-5 text-primary" />
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-foreground text-sm font-semibold">
+                <MessageSquare className="h-4 w-4 text-primary" />
                 Contexte de la demande
               </CardTitle>
-              <CardDescription>
-                Décrivez la situation et ce que vous souhaitez communiquer
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">
-                  Contexte principal <span className="text-destructive">*</span>
+                  Contexte <span className="text-destructive">*</span>
                 </label>
                 <Textarea
-                  placeholder="Ex: Le client demande le suivi de son colis LP123456789FR envoyé le 15 janvier. Il souhaite connaître la date de livraison estimée."
+                  placeholder="Ex : Le client demande le suivi de son colis LP123456789FR envoyé le 15 janvier. Il souhaite connaître la date de livraison estimée…"
                   value={context}
-                  onChange={(e) => setContext(e.target.value)}
-                  className="min-h-[120px] resize-none"
+                  onChange={e => setContext(e.target.value)}
+                  className="min-h-[110px] resize-none"
                 />
               </div>
-
               <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
                 <CollapsibleTrigger asChild>
-                  <Button variant="ghost" className="w-full justify-between h-10 px-3">
-                    <span className="text-sm text-muted-foreground">
-                      Options avancées
-                    </span>
-                    <ChevronDown
-                      className={cn(
-                        "h-4 w-4 text-muted-foreground transition-transform",
-                        showAdvanced && "rotate-180"
-                      )}
-                    />
+                  <Button variant="ghost" className="w-full justify-between h-9 px-3">
+                    <span className="text-sm text-muted-foreground">Options avancées</span>
+                    <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", showAdvanced && "rotate-180")} />
                   </Button>
                 </CollapsibleTrigger>
-                <CollapsibleContent className="pt-4 space-y-4">
+                <CollapsibleContent className="pt-3">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">
-                      Informations complémentaires
-                    </label>
+                    <label className="text-sm font-medium text-foreground">Informations complémentaires</label>
                     <Textarea
-                      placeholder="Historique client, numéros de référence, détails spécifiques..."
+                      placeholder="Numéros de référence, historique client, détails spécifiques…"
                       value={additionalInfo}
-                      onChange={(e) => setAdditionalInfo(e.target.value)}
-                      className="min-h-[80px] resize-none"
+                      onChange={e => setAdditionalInfo(e.target.value)}
+                      className="min-h-[72px] resize-none"
                     />
                   </div>
                 </CollapsibleContent>
@@ -222,101 +233,145 @@ export default function GenerateEmailPage() {
             </CardContent>
           </Card>
 
+          {genError && (
+            <div className="flex items-start gap-2 text-destructive text-sm p-3 rounded-lg bg-destructive/8 border border-destructive/20">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{genError}</span>
+            </div>
+          )}
+
           <Button
             onClick={handleGenerate}
-            disabled={!context || isGenerating}
-            className="w-full h-12 text-base"
+            disabled={!context.trim() || generating}
+            className="w-full h-11"
           >
-            {isGenerating ? (
+            {generating ? (
               <span className="flex items-center gap-2">
                 <span className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                Génération en cours...
+                Génération en cours…
               </span>
             ) : (
               <span className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4" />
-                Générer l&apos;email
+                Générer l'email
               </span>
             )}
           </Button>
         </div>
 
-        {/* Generated Email Preview */}
-        <div className="space-y-4">
-          <Card className={cn(
-            "border-border/50 h-full flex flex-col",
-            !generatedEmail && "items-center justify-center"
-          )}>
-            {generatedEmail ? (
+        {/* ── Résultat droit ── */}
+        <div>
+          <Card className={cn("border-border/50 flex flex-col", !result && "min-h-[460px] items-center justify-center")}>
+            {result ? (
               <>
-                <CardHeader className="flex flex-row items-center justify-between">
+                <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
                   <div>
-                    <CardTitle className="flex items-center gap-2 text-foreground">
-                      <FileText className="h-5 w-5 text-primary" />
+                    <CardTitle className="flex items-center gap-2 text-foreground text-sm font-semibold">
+                      <FileText className="h-4 w-4 text-primary" />
                       Email généré
                     </CardTitle>
-                    <CardDescription>
-                      Relisez et modifiez si nécessaire avant envoi
-                    </CardDescription>
+                    <CardDescription className="text-xs mt-0.5">Relisez et modifiez si nécessaire</CardDescription>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <Button
-                      variant="outline"
-                      size="icon"
-                      onClick={handleRegenerate}
-                      disabled={isGenerating}
-                      className="h-9 w-9"
+                      variant="outline" size="icon" className="h-8 w-8"
+                      onClick={handleGenerate}
+                      disabled={generating || !context.trim()}
+                      title="Régénérer"
                     >
-                      <RefreshCw className={cn("h-4 w-4", isGenerating && "animate-spin")} />
+                      <RefreshCw className={cn("h-3.5 w-3.5", generating && "animate-spin")} />
                     </Button>
                     <Button
-                      variant="outline"
-                      size="icon"
+                      variant="outline" size="icon" className="h-8 w-8"
                       onClick={handleCopy}
-                      className="h-9 w-9"
+                      title="Copier"
                     >
-                      {copied ? (
-                        <Check className="h-4 w-4 text-primary" />
-                      ) : (
-                        <Copy className="h-4 w-4" />
-                      )}
+                      {copied
+                        ? <Check className="h-3.5 w-3.5 text-primary" />
+                        : <Copy className="h-3.5 w-3.5" />
+                      }
                     </Button>
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1">
-                  <div className="h-full min-h-[400px] p-4 rounded-lg bg-muted/50 border border-border">
+
+                <CardContent className="flex-1 space-y-4">
+                  {/* Objet */}
+                  <div className="p-3 rounded-lg bg-muted/40 border border-border">
+                    <p className="text-[11px] text-muted-foreground font-medium uppercase tracking-wide mb-1">Objet</p>
+                    <p className="text-sm font-semibold text-foreground">{result.subject}</p>
+                  </div>
+
+                  {/* Corps */}
+                  <div className="p-4 rounded-lg bg-muted/50 border border-border min-h-[180px]">
                     <pre className="whitespace-pre-wrap text-sm text-foreground font-sans leading-relaxed">
-                      {generatedEmail}
+                      {result.body}
                     </pre>
                   </div>
+
+                  {/* Scores qualité */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground">Score qualité</p>
+                    {qualityItems.map(q => (
+                      <div key={q.label} className="flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground w-20 shrink-0">{q.label}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-700"
+                            style={{ width: `${q.value}%`, background: q.color }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-foreground w-9 text-right">{q.value}%</span>
+                      </div>
+                    ))}
+                  </div>
                 </CardContent>
-                <div className="p-6 pt-0 flex gap-3">
-                  <Button variant="outline" className="flex-1">
-                    Modifier
-                  </Button>
-                  <Button className="flex-1">
-                    <Send className="h-4 w-4 mr-2" />
-                    Copier et ouvrir Outlook
+
+                {/* Sauvegarde */}
+                <div className="px-5 pb-5 pt-3 border-t border-border space-y-2">
+                  {saveMsg && (
+                    <p className={cn("text-xs flex items-center gap-1", saved ? "text-green-600" : "text-destructive")}>
+                      {saved && <Check className="h-3 w-3" />}
+                      {saveMsg}
+                    </p>
+                  )}
+                  <Button
+                    variant="outline"
+                    className="w-full h-9 text-sm"
+                    onClick={handleSave}
+                    disabled={saving || !clientEmail.trim() || saved}
+                  >
+                    {saving ? (
+                      <span className="flex items-center gap-2">
+                        <span className="h-3.5 w-3.5 border-2 border-foreground/30 border-t-foreground rounded-full animate-spin" />
+                        Sauvegarde…
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <Save className="h-3.5 w-3.5" />
+                        {clientEmail.trim()
+                          ? "Sauvegarder dans l'historique"
+                          : "Entrez l'email client pour sauvegarder"}
+                      </span>
+                    )}
                   </Button>
                 </div>
               </>
             ) : (
-              <div className="text-center p-8 space-y-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted mx-auto">
-                  <FileText className="h-8 w-8 text-muted-foreground" />
+              <div className="text-center p-10 space-y-3">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-muted mx-auto">
+                  <FileText className="h-7 w-7 text-muted-foreground" />
                 </div>
-                <div className="space-y-2">
-                  <h3 className="font-semibold text-foreground">
-                    Aucun email généré
-                  </h3>
-                  <p className="text-sm text-muted-foreground max-w-[250px]">
-                    Remplissez le formulaire et cliquez sur &quot;Générer l&apos;email&quot; pour voir le résultat ici.
+                <div className="space-y-1.5">
+                  <h3 className="font-semibold text-foreground text-sm">Aucun email généré</h3>
+                  <p className="text-xs text-muted-foreground max-w-[200px] mx-auto leading-relaxed">
+                    Remplissez le contexte et cliquez sur "Générer l'email".
                   </p>
                 </div>
               </div>
             )}
           </Card>
         </div>
+
       </div>
     </div>
   )
