@@ -5,13 +5,13 @@ namespace App\Http\Controllers;
 use App\Http\Resources\ApiResponse;
 use App\Models\KnowledgeBase;
 use App\Services\ActivityLogService;
-use App\Services\GroqService;
+use App\Services\GeminiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class AiController extends Controller
 {
-    public function __construct(private GroqService $groq) {}
+    public function __construct(private GeminiService $groq) {}
 
     public function analyzeIncoming(Request $request): JsonResponse
     {

@@ -135,7 +135,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
             </div>
             {!collapsed && (
               <span className="text-lg font-semibold text-sidebar-foreground">
-                PostAssist
+                PostSmart <span className="text-yellow-400">IA</span>
               </span>
             )}
           </Link>

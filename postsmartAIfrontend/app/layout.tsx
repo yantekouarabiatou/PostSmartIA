@@ -15,25 +15,20 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'PostSmartAI - Assistant Intelligent La Poste',
-  description: 'Outil de génération d\'emails assisté par IA pour les conseillers clientèle La Poste',
+  title: 'PostSmart IA',
+  description: 'PostSmart IA — Assistant IA pour les conseillers clientèle de La Poste',
   generator: 'v0.app',
   icons: {
     icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
+      { url: '/favicon.svg', type: 'image/svg+xml' },
+      { url: '/icon-light-32x32.png', media: '(prefers-color-scheme: light)' },
+      { url: '/icon-dark-32x32.png',  media: '(prefers-color-scheme: dark)'  },
     ],
     apple: '/apple-icon.png',
+  },
+  openGraph: {
+    title: 'PostSmart IA',
+    description: 'PostSmart IA — Assistant IA pour les conseillers clientèle de La Poste',
   },
 }
 

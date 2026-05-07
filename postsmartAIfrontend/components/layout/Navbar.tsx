@@ -131,7 +131,7 @@ export default function Navbar() {
           justifyContent: "center", fontSize: "16px",
         }}>✉</div>
         <span style={{ color: "#fff", fontWeight: 600, fontSize: "16px" }}>
-          Post<span style={{ color: "#FFCC00" }}>Assist</span>
+          PostSmart<span style={{ color: "#FFCC00" }}> IA</span>
         </span>
       </Link>
 

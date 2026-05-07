@@ -4,7 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\ApiResponse;
 use App\Models\KnowledgeBase;
-use App\Services\GroqService;
+use App\Services\GeminiService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -38,7 +38,7 @@ class ChatController extends Controller
         }
 
         try {
-            $result            = app(GroqService::class)->chatAssistant($request->messages, $context);
+            $result            = app(GeminiService::class)->chatAssistant($request->messages, $context);
             $result['sources'] = $sources ?? [];
 
             return ApiResponse::success($result, 'Réponse générée');
