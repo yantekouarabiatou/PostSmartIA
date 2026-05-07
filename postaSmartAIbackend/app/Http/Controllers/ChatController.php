@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Resources\ApiResponse;
 use App\Models\KnowledgeBase;
 use App\Services\GeminiService;
+use App\Services\GroqService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -38,17 +39,18 @@ class ChatController extends Controller
         }
 
         try {
-            $result            = app(GeminiService::class)->chatAssistant($request->messages, $context);
-            $result['sources'] = $sources ?? [];
-
-            return ApiResponse::success($result, 'Réponse générée');
+            $result = app(GeminiService::class)->chatAssistant($request->messages, $context);
         } catch (\Exception $e) {
-            Log::error('Chat assistant error: ' . $e->getMessage());
-            return ApiResponse::error(
-                null,
-                'Le service IA est temporairement indisponible.',
-                503
-            );
+            Log::warning('Gemini unavailable, falling back to Groq: ' . $e->getMessage());
+            try {
+                $result = app(GroqService::class)->chatAssistant($request->messages, $context);
+            } catch (\Exception $e2) {
+                Log::error('Groq fallback also failed: ' . $e2->getMessage());
+                return ApiResponse::error(null, 'Le service IA est temporairement indisponible.', 503);
+            }
         }
+
+        $result['sources'] = $sources ?? [];
+        return ApiResponse::success($result, 'Réponse générée');
     }
 }

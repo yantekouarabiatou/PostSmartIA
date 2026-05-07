@@ -6,19 +6,29 @@ use App\Http\Resources\ApiResponse;
 use App\Models\KnowledgeBase;
 use App\Services\ActivityLogService;
 use App\Services\GeminiService;
+use App\Services\GroqService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AiController extends Controller
 {
-    public function __construct(private GeminiService $groq) {}
+    private function withFallback(callable $fn): mixed
+    {
+        try {
+            return $fn(app(GeminiService::class));
+        } catch (\Exception $e) {
+            Log::warning('Gemini unavailable, falling back to Groq: ' . $e->getMessage());
+            return $fn(app(GroqService::class));
+        }
+    }
 
     public function analyzeIncoming(Request $request): JsonResponse
     {
         $request->validate(['email_content' => 'required|string|min:10']);
 
         try {
-            $result = $this->groq->analyzeEmail($request->email_content);
+            $result = $this->withFallback(fn($ai) => $ai->analyzeEmail($request->email_content));
             ActivityLogService::log('mail_analyzed', 'Analyse d\'un mail entrant effectuée');
             return ApiResponse::success($result, 'Analyse effectuée avec succès');
         } catch (\Exception $e) {
@@ -35,7 +45,7 @@ class AiController extends Controller
         ]);
 
         try {
-            $result = $this->groq->generateEmailResponse($request->email_content, $request->service_type);
+            $result = $this->withFallback(fn($ai) => $ai->generateEmailResponse($request->email_content, $request->service_type));
             ActivityLogService::log('mail_processed', 'Génération de réponse mail effectuée');
             return ApiResponse::success($result, 'Réponse générée avec succès');
         } catch (\Exception $e) {
@@ -51,7 +61,7 @@ class AiController extends Controller
         ]);
 
         try {
-            $result = $this->groq->improveEmail($request->advisor_draft);
+            $result = $this->withFallback(fn($ai) => $ai->improveEmail($request->advisor_draft));
             return ApiResponse::success($result, 'Brouillon amélioré avec succès');
         } catch (\Exception $e) {
             return ApiResponse::error(null, 'Erreur IA: ' . $e->getMessage(), 503);
@@ -71,7 +81,7 @@ class AiController extends Controller
             . ($request->next_steps  ? "Prochaines étapes: {$request->next_steps}" : '');
 
         try {
-            $result = $this->groq->generateCallReport($summary);
+            $result = $this->withFallback(fn($ai) => $ai->generateCallReport($summary));
             ActivityLogService::log('call_report', "Compte-rendu d'appel généré pour: {$request->client_name}");
             return ApiResponse::success($result, 'Compte-rendu généré avec succès');
         } catch (\Exception $e) {
@@ -99,7 +109,8 @@ class AiController extends Controller
         $messages[] = ['role' => 'user', 'content' => $request->message];
 
         try {
-            $result = $this->groq->chatAssistant(array_values($messages), $context);
+            $msgs   = array_values($messages);
+            $result = $this->withFallback(fn($ai) => $ai->chatAssistant($msgs, $context));
             $result['sources'] = $kbItems->pluck('title')->toArray();
             return ApiResponse::success($result, 'Réponse générée');
         } catch (\Exception $e) {

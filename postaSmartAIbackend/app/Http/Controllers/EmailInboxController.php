@@ -6,12 +6,23 @@ use App\Http\Resources\ApiResponse;
 use App\Models\EmailInbox;
 use App\Services\ActivityLogService;
 use App\Services\GeminiService;
+use App\Services\GroqService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class EmailInboxController extends Controller
 {
+    private function aiCall(callable $fn): mixed
+    {
+        try {
+            return $fn(app(GeminiService::class));
+        } catch (\Exception $e) {
+            Log::warning('Gemini unavailable, falling back to Groq: ' . $e->getMessage());
+            return $fn(app(GroqService::class));
+        }
+    }
+
     public function index(Request $request): JsonResponse
     {
         $query = EmailInbox::query();
@@ -73,10 +84,9 @@ class EmailInboxController extends Controller
         if (!$email) return ApiResponse::notFound('Mail introuvable');
 
         try {
-            $gemini   = app(GeminiService::class);
             $content  = $email->body_text ?: strip_tags($email->body_html ?? '');
-            $analysis = $gemini->analyzeEmail($content);
-            $response = $gemini->generateEmailResponse($content, $analysis['service_type'] ?? 'autre');
+            $analysis = $this->aiCall(fn($ai) => $ai->analyzeEmail($content));
+            $response = $this->aiCall(fn($ai) => $ai->generateEmailResponse($content, $analysis['service_type'] ?? 'autre'));
 
             $email->update([
                 'is_processed'         => true,
