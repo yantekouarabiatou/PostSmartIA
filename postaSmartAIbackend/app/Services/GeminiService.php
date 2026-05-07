@@ -68,16 +68,46 @@ class GeminiService
 
     private function completeJson(array $messages, ?string $systemPrompt = null): array
     {
-        $text  = $this->complete($messages, ($systemPrompt ?? $this->systemPrompt())
-            . "\nRéponds UNIQUEMENT en JSON valide, sans balises markdown.");
-        $clean = preg_replace('/^```json\s*|\s*```$/m', '', trim($text));
+        $strictSystem = ($systemPrompt ?? $this->systemPrompt()) . "\n\n" .
+            "RÈGLE ABSOLUE : Tu dois retourner UNIQUEMENT du JSON valide et rien d'autre. " .
+            "Pas de texte avant. Pas de texte après. Pas d'explication. " .
+            "Pas de balises markdown. Pas de ```json. " .
+            "Ta réponse doit commencer par { et se terminer par }. " .
+            "Aucune exception à cette règle.";
 
-        $result = json_decode($clean, true);
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \Exception('Invalid JSON from Gemini: ' . $clean);
+        $text = $this->complete($messages, $strictSystem);
+
+        // Stratégie 1 : JSON direct
+        $result = json_decode(trim($text), true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            return $result;
         }
 
-        return $result;
+        // Stratégie 2 : nettoyer les balises markdown
+        $clean = preg_replace('/^```(?:json)?\s*/m', '', $text);
+        $clean = preg_replace('/\s*```$/m', '', $clean);
+        $clean = trim($clean);
+        $result = json_decode($clean, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            return $result;
+        }
+
+        // Stratégie 3 : extraire { ... } même entouré de texte
+        $start = strpos($clean, '{');
+        $end   = strrpos($clean, '}');
+        if ($start !== false && $end !== false && $end > $start) {
+            $extracted = substr($clean, $start, $end - $start + 1);
+            $result = json_decode($extracted, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $result;
+            }
+        }
+
+        Log::error('Invalid JSON from Gemini', [
+            'raw_response' => $text,
+            'json_error'   => json_last_error_msg(),
+        ]);
+        throw new \Exception('Réponse IA invalide — impossible d\'extraire le JSON. Raw: ' . substr($text, 0, 300));
     }
 
     private function systemPrompt(): string

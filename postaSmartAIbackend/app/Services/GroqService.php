@@ -41,18 +41,49 @@ class GroqService
 
     private function completeJson(string $prompt, ?string $systemOverride = null): array
     {
-        $text    = $this->complete(
-            [['role' => 'user', 'content' => $prompt]],
-            $systemOverride ?? $this->systemPrompt
-        );
-        $text    = preg_replace('/```json\s*|\s*```/', '', $text);
-        $decoded = json_decode(trim($text), true);
+        $strictSystem = ($systemOverride ?? $this->systemPrompt) . "\n\n" .
+            "RÈGLE ABSOLUE : Tu dois retourner UNIQUEMENT du JSON valide et rien d'autre. " .
+            "Pas de texte avant. Pas de texte après. Pas d'explication. " .
+            "Pas de balises markdown. Pas de ```json. " .
+            "Ta réponse doit commencer par { et se terminer par }. " .
+            "Aucune exception à cette règle.";
 
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \RuntimeException('Réponse JSON invalide de Groq: ' . $text);
+        $text = $this->complete(
+            [['role' => 'user', 'content' => $prompt]],
+            $strictSystem
+        );
+
+        // Stratégie 1 : JSON direct
+        $result = json_decode(trim($text), true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            return $result;
         }
 
-        return $decoded;
+        // Stratégie 2 : nettoyer les balises markdown
+        $clean = preg_replace('/^```(?:json)?\s*/m', '', $text);
+        $clean = preg_replace('/\s*```$/m', '', $clean);
+        $clean = trim($clean);
+        $result = json_decode($clean, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+            return $result;
+        }
+
+        // Stratégie 3 : extraire { ... } même entouré de texte
+        $start = strpos($clean, '{');
+        $end   = strrpos($clean, '}');
+        if ($start !== false && $end !== false && $end > $start) {
+            $extracted = substr($clean, $start, $end - $start + 1);
+            $result = json_decode($extracted, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $result;
+            }
+        }
+
+        Log::error('Invalid JSON from Groq', [
+            'raw_response' => $text,
+            'json_error'   => json_last_error_msg(),
+        ]);
+        throw new \RuntimeException('Réponse IA invalide — impossible d\'extraire le JSON. Raw: ' . substr($text, 0, 300));
     }
 
     public function analyzeEmail(string $emailContent): array
