@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             EmailHistorySeeder::class,
             KnowledgeBaseSeeder::class,
+            EmailInboxSeeder::class,
         ]);
     }
 }

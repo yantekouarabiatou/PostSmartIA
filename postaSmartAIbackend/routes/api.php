@@ -13,6 +13,19 @@ use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
+// ─── Test Gemini (public) ────────────────────────────────────────────────────
+Route::get('/test-gemini', function () {
+    try {
+        $gemini = app(\App\Services\GeminiService::class);
+        $result = $gemini->chatAssistant([
+            ['role' => 'user', 'content' => 'Bonjour, teste la connexion PostSmart IA.'],
+        ]);
+        return response()->json(['success' => true, 'response' => $result['reply'] ?? $result]);
+    } catch (\Exception $e) {
+        return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+    }
+});
+
 // ─── Routes publiques ───────────────────────────────────────────────────────
 Route::post('/auth/login',          [AuthController::class, 'login']);
 Route::post('/auth/register',       [AuthController::class, 'register']);
@@ -53,10 +66,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/chat/assistant', [ChatController::class, 'assistant']);
 
     // Boîte mail IMAP
-    Route::get('/emails',              [EmailInboxController::class, 'index']);
-    Route::get('/emails/{id}',         [EmailInboxController::class, 'show']);
-    Route::put('/emails/{id}/read',    [EmailInboxController::class, 'markAsRead']);
-    Route::post('/emails/{id}/process',[EmailInboxController::class, 'process']);
+    Route::prefix('emails')->group(function () {
+        Route::get('/',                  [EmailInboxController::class, 'index']);
+        Route::get('/{id}',              [EmailInboxController::class, 'show']);
+        Route::put('/{id}/read',         [EmailInboxController::class, 'markAsRead']);
+        Route::post('/{id}/process',     [EmailInboxController::class, 'process']);
+        Route::post('/{id}/analyze',     [EmailInboxController::class, 'analyzeAndRespond']);
+        Route::post('/{id}/validate',    [EmailInboxController::class, 'validateResponse']);
+        Route::post('/{id}/archive',     [EmailInboxController::class, 'archive']);
+        Route::post('/{id}/unarchive',   [EmailInboxController::class, 'unarchive']);
+    });
 
     // Notifications
     Route::get('/notifications',                      [NotificationController::class, 'index']);
