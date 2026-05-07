@@ -19,6 +19,7 @@ import {
   Users,
   Shield,
   KeyRound,
+  ClipboardList,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -53,12 +54,13 @@ const ROLE_LABELS: Record<string, string> = {
 }
 
 const BASE_NAV = [
-  { title: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard },
-  { title: "Mails entrants", href: "/dashboard/incoming", icon: Inbox },
-  { title: "Compte-rendu d'appel", href: "/dashboard/call-report", icon: Phone },
-  { title: "Générer un email", href: "/dashboard/generate", icon: Mail },
-  { title: "Historique", href: "/dashboard/history", icon: History },
-  { title: "Base de connaissances", href: "/dashboard/knowledge", icon: BookOpen },
+  { title: "Tableau de bord",       href: "/dashboard",             icon: LayoutDashboard },
+  { title: "Mails entrants",        href: "/dashboard/incoming",    icon: Inbox },
+  { title: "Formulaires",           href: "/dashboard/forms",       icon: ClipboardList },
+  { title: "Compte-rendu d'appel",  href: "/dashboard/call-report", icon: Phone },
+  { title: "Générer un email",      href: "/dashboard/generate",    icon: Mail },
+  { title: "Historique",            href: "/dashboard/history",     icon: History },
+  { title: "Base de connaissances", href: "/dashboard/knowledge",   icon: BookOpen },
 ]
 
 export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {

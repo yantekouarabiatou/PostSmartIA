@@ -38,6 +38,7 @@ const ROLE_COLOR: Record<string, string> = {
 const NAV_LINKS = [
   { label: "Tableau de bord", path: "/dashboard" },
   { label: "Mails entrants",  path: "/dashboard/incoming" },
+  { label: "Formulaires",     path: "/dashboard/forms" },
   { label: "Générer un email", path: "/dashboard/generate" },
   { label: "Historique",      path: "/dashboard/history" },
 ]
