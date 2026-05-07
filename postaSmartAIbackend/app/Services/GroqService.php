@@ -7,45 +7,45 @@ use Illuminate\Support\Facades\Log;
 
 class GroqService
 {
-    private string $apiKey;
-    private string $model;
-    private string $baseUrl;
-
     private string $systemPrompt = "Tu es un assistant expert de La Poste France. Tu aides les conseillers clientèle à rédiger des mails professionnels, empathiques et conformes à la charte relationnelle de La Poste. Tes réponses sont toujours en français, claires, structurées et adaptées au contexte client. Tu ne dois jamais inventer d'informations — si tu ne connais pas une procédure précise, indique-le clairement au conseiller.";
 
-    public function __construct()
+    private function complete(array $messages, ?string $systemPrompt = null): string
     {
-        $this->apiKey  = config('services.groq.key', '');
-        $this->model   = config('services.groq.model', 'llama-3.3-70b-versatile');
-        $this->baseUrl = config('services.groq.base_url', 'https://api.groq.com/openai/v1');
-    }
+        $payload = [
+            'model'       => config('services.groq.model', 'llama-3.3-70b-versatile'),
+            'messages'    => $systemPrompt
+                ? array_merge([['role' => 'system', 'content' => $systemPrompt]], $messages)
+                : $messages,
+            'temperature' => 0.7,
+            'max_tokens'  => 2048,
+        ];
 
-    private function complete(string $userMessage, int $maxTokens = 2048, ?string $systemOverride = null): string
-    {
         $response = Http::withHeaders([
-            'Authorization' => "Bearer {$this->apiKey}",
+            'Authorization' => 'Bearer ' . config('services.groq.api_key'),
             'Content-Type'  => 'application/json',
-        ])->post("{$this->baseUrl}/chat/completions", [
-            'model'      => $this->model,
-            'max_tokens' => $maxTokens,
-            'messages'   => [
-                ['role' => 'system', 'content' => $systemOverride ?? $this->systemPrompt],
-                ['role' => 'user',   'content' => $userMessage],
-            ],
-        ]);
+        ])->withoutVerifying()->timeout(30)->post(
+            config('services.groq.base_url', 'https://api.groq.com/openai/v1') . '/chat/completions',
+            $payload
+        );
 
-        if (!$response->successful()) {
-            Log::error('Groq API error', ['status' => $response->status(), 'body' => $response->body()]);
-            throw new \RuntimeException('Erreur lors de la communication avec Groq: ' . $response->body());
+        if ($response->failed()) {
+            Log::error('Groq API error', [
+                'status' => $response->status(),
+                'body'   => $response->body(),
+            ]);
+            throw new \Exception('Groq API error ' . $response->status() . ': ' . $response->body());
         }
 
         return $response->json('choices.0.message.content', '');
     }
 
-    private function completeJson(string $userMessage, int $maxTokens = 2048, ?string $systemOverride = null): array
+    private function completeJson(string $prompt, ?string $systemOverride = null): array
     {
-        $text = $this->complete($userMessage, $maxTokens, $systemOverride);
-        $text = preg_replace('/```json\s*|\s*```/', '', $text);
+        $text    = $this->complete(
+            [['role' => 'user', 'content' => $prompt]],
+            $systemOverride ?? $this->systemPrompt
+        );
+        $text    = preg_replace('/```json\s*|\s*```/', '', $text);
         $decoded = json_decode(trim($text), true);
 
         if (json_last_error() !== JSON_ERROR_NONE) {
@@ -112,29 +112,10 @@ class GroqService
             $systemPrompt .= "\n\nContexte base de connaissances disponible:\n{$context}";
         }
 
-        $apiMessages = array_map(fn($m) => [
-            'role'    => $m['role'],
-            'content' => $m['content'],
-        ], $messages);
-
-        $response = Http::withHeaders([
-            'Authorization' => "Bearer {$this->apiKey}",
-            'Content-Type'  => 'application/json',
-        ])->post("{$this->baseUrl}/chat/completions", [
-            'model'      => $this->model,
-            'max_tokens' => 1024,
-            'messages'   => array_merge(
-                [['role' => 'system', 'content' => $systemPrompt]],
-                $apiMessages
-            ),
-        ]);
-
-        if (!$response->successful()) {
-            throw new \RuntimeException('Erreur Groq: ' . $response->body());
-        }
+        $reply = $this->complete($messages, $systemPrompt);
 
         return [
-            'reply'   => $response->json('choices.0.message.content', ''),
+            'reply'   => $reply,
             'sources' => [],
         ];
     }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { AppSidebar } from "@/components/app-sidebar"
 import { ChatPanel } from "@/components/chat-panel"
+import Navbar from "@/components/layout/Navbar"
 import { cn } from "@/lib/utils"
 
 export default function DashboardLayout({
@@ -27,10 +28,11 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-background">
+      <Navbar />
       <AppSidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
       <main
         className={cn(
-          "transition-all duration-300",
+          "transition-all duration-300 pt-16",
           collapsed ? "ml-16" : "ml-64"
         )}
       >

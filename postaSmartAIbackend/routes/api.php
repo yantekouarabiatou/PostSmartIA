@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AiController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmailHistoryController;
 use App\Http\Controllers\EmailInboxController;
@@ -46,6 +47,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/call-report',       [AiController::class, 'generateCallReport']);
         Route::post('/chat',              [AiController::class, 'chat']);
     });
+
+    // Chat assistant
+    Route::post('/chat/assistant', [ChatController::class, 'assistant']);
 
     // Boîte mail IMAP
     Route::get('/emails',              [EmailInboxController::class, 'index']);

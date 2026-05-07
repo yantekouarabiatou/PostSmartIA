@@ -1,15 +1,17 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import {
   Users, Plus, Search, Edit2, Trash2, ToggleLeft, ToggleRight, X, Eye, EyeOff,
 } from "lucide-react"
+import { type TableColumn } from "react-data-table-component"
 import { api } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import AppDataTable from "@/components/ui/AppDataTable"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
@@ -231,6 +233,89 @@ export default function UsersPage() {
 
   const totalPages = Math.ceil(total / PER_PAGE)
 
+  // ── Columns ─────────────────────────────────────────────────────────────────
+
+  const columns = useMemo<TableColumn<User>[]>(() => [
+    {
+      name: "Nom",
+      cell: (row) => (
+        <div className="flex items-center gap-2.5 py-1">
+          <UserAvatar user={row} />
+          <span className="font-medium text-foreground text-sm whitespace-nowrap">
+            {row.first_name} {row.last_name}
+          </span>
+        </div>
+      ),
+      grow: 2,
+    },
+    {
+      name: "Email",
+      cell: (row) => <span className="text-muted-foreground text-sm">{row.email}</span>,
+      grow: 2,
+    },
+    {
+      name: "Rôle",
+      cell: (row) => {
+        const cfg = ROLE_CFG[row.role] ?? { label: row.role, color: "bg-gray-100 text-gray-700" }
+        return <Badge className={cn("text-xs border-0", cfg.color)}>{cfg.label}</Badge>
+      },
+      grow: 1,
+    },
+    {
+      name: "Équipe",
+      cell: (row) => <span className="text-muted-foreground text-sm">{row.equipe ?? "—"}</span>,
+      grow: 1,
+    },
+    {
+      name: "Statut",
+      cell: (row) => row.is_active
+        ? <Badge className="text-xs border-0 bg-green-100 text-green-800">Actif</Badge>
+        : <Badge className="text-xs border-0 bg-gray-100 text-gray-600">Inactif</Badge>,
+      grow: 0.8,
+    },
+    {
+      name: "Connexion",
+      cell: (row) => (
+        <span className="text-muted-foreground text-xs whitespace-nowrap">
+          {row.last_login_at
+            ? format(new Date(row.last_login_at), "dd/MM/yyyy HH:mm", { locale: fr })
+            : "Jamais"}
+        </span>
+      ),
+      grow: 1,
+    },
+    {
+      name: "Actions",
+      allowOverflow: true,
+      right: true,
+      cell: (row) => (
+        <div className="flex items-center gap-0.5">
+          <Button variant="ghost" size="icon" className="h-7 w-7" title="Modifier"
+            onClick={() => openEdit(row)}>
+            <Edit2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button
+            variant="ghost" size="icon"
+            className={cn("h-7 w-7", row.is_active ? "text-green-600" : "text-muted-foreground")}
+            title={row.is_active ? "Désactiver" : "Activer"}
+            onClick={(e) => { e.stopPropagation(); handleToggle(row) }}
+          >
+            {row.is_active ? <ToggleRight className="h-3.5 w-3.5" /> : <ToggleLeft className="h-3.5 w-3.5" />}
+          </Button>
+          <Button
+            variant="ghost" size="icon"
+            className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+            title="Supprimer"
+            onClick={(e) => { e.stopPropagation(); setDeleteTarget(row) }}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      ),
+      grow: 0.8,
+    },
+  ], [openEdit, handleToggle]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -291,147 +376,17 @@ export default function UsersPage() {
       </Card>
 
       {/* Table */}
-      <Card className="border-border/50">
-        <CardContent className="pt-0">
-          <div className="overflow-x-auto -mx-2 px-2">
-            <table className="w-full text-sm min-w-[600px]">
-              <thead>
-                <tr className="border-b border-border">
-                  {["Nom", "Email", "Rôle", "Équipe", "Statut", "Dernière connexion", "Actions"].map(h => (
-                    <th
-                      key={h}
-                      className="text-left py-3 px-4 font-semibold text-muted-foreground text-xs uppercase tracking-wide"
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {loading
-                  ? Array.from({ length: 6 }).map((_, i) => (
-                      <tr key={i} className="border-b border-border/50">
-                        {Array.from({ length: 7 }).map((_, j) => (
-                          <td key={j} className="py-3 px-4">
-                            <div className="h-5 bg-muted animate-pulse rounded" />
-                          </td>
-                        ))}
-                      </tr>
-                    ))
-                  : users.length === 0
-                  ? (
-                    <tr>
-                      <td colSpan={7} className="text-center py-16 text-muted-foreground">
-                        <Users className="h-10 w-10 mx-auto mb-3 text-muted-foreground/40" />
-                        Aucun utilisateur trouvé
-                      </td>
-                    </tr>
-                  )
-                  : users.map(user => {
-                      const roleCfg = ROLE_CFG[user.role] ?? { label: user.role, color: "bg-gray-100 text-gray-700" }
-                      return (
-                        <tr key={user.id} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                          {/* Nom + avatar */}
-                          <td className="py-3 px-4">
-                            <div className="flex items-center gap-2.5">
-                              <UserAvatar user={user} />
-                              <span className="font-medium text-foreground whitespace-nowrap">
-                                {user.first_name} {user.last_name}
-                              </span>
-                            </div>
-                          </td>
-
-                          {/* Email */}
-                          <td className="py-3 px-4">
-                            <span className="text-muted-foreground text-sm">{user.email}</span>
-                          </td>
-
-                          {/* Rôle */}
-                          <td className="py-3 px-4">
-                            <Badge className={cn("text-xs border-0 whitespace-nowrap", roleCfg.color)}>
-                              {roleCfg.label}
-                            </Badge>
-                          </td>
-
-                          {/* Équipe */}
-                          <td className="py-3 px-4">
-                            <span className="text-muted-foreground text-sm">{user.equipe ?? "—"}</span>
-                          </td>
-
-                          {/* Statut */}
-                          <td className="py-3 px-4">
-                            {user.is_active
-                              ? <Badge className="text-xs border-0 bg-green-100 text-green-800">Actif</Badge>
-                              : <Badge className="text-xs border-0 bg-gray-100 text-gray-600">Inactif</Badge>
-                            }
-                          </td>
-
-                          {/* Dernière connexion */}
-                          <td className="py-3 px-4">
-                            <span className="text-muted-foreground text-xs whitespace-nowrap">
-                              {user.last_login_at
-                                ? format(new Date(user.last_login_at), "dd/MM/yyyy HH:mm", { locale: fr })
-                                : "Jamais"}
-                            </span>
-                          </td>
-
-                          {/* Actions */}
-                          <td className="py-3 px-4">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost" size="icon" className="h-7 w-7"
-                                title="Modifier"
-                                onClick={() => openEdit(user)}
-                              >
-                                <Edit2 className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost" size="icon"
-                                className={cn("h-7 w-7", user.is_active ? "text-green-600" : "text-muted-foreground")}
-                                title={user.is_active ? "Désactiver" : "Activer"}
-                                onClick={() => handleToggle(user)}
-                              >
-                                {user.is_active
-                                  ? <ToggleRight className="h-3.5 w-3.5" />
-                                  : <ToggleLeft  className="h-3.5 w-3.5" />
-                                }
-                              </Button>
-                              <Button
-                                variant="ghost" size="icon"
-                                className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                title="Supprimer"
-                                onClick={() => setDeleteTarget(user)}
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })
-                }
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-6 pt-4 border-t border-border">
-              <p className="text-sm text-muted-foreground">
-                Page {page} sur {totalPages}
-              </p>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                  Précédent
-                </Button>
-                <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                  Suivant
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <AppDataTable<User>
+        columns={columns}
+        data={users}
+        loading={loading}
+        searchable={false}
+        paginationServer
+        paginationTotalRows={total}
+        onChangePage={(p) => setPage(p)}
+        paginationDefaultPage={page}
+        paginationResetDefaultPage={refreshKey > 0}
+      />
 
       {/* ── Create / Edit Modal ─────────────────────────────────────────────── */}
       {modalOpen && (

@@ -43,9 +43,8 @@ export function ChatPanel({ onInjectText }: ChatPanelProps) {
 
     try {
       const history = messages.map((m) => ({ role: m.role, content: m.content }))
-      const data = await api.post<ChatResponse>("/ai/chat", {
-        message: text,
-        history,
+      const data = await api.post<ChatResponse>("/chat/assistant", {
+        messages: [...history, { role: "user", content: text }],
       })
       setMessages((prev) => [
         ...prev,

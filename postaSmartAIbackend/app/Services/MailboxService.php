@@ -4,25 +4,15 @@ namespace App\Services;
 
 use App\Models\EmailInbox;
 use Illuminate\Support\Facades\Log;
+use Webklex\PHPIMAP\ClientManager;
 
 class MailboxService
 {
     public function fetchUnreadEmails(): array
     {
         try {
-            $client = \Webklex\PHPIMAP\ClientManager::make([
-                'accounts' => [
-                    'default' => [
-                        'host'          => config('imap.accounts.default.host'),
-                        'port'          => config('imap.accounts.default.port'),
-                        'encryption'    => config('imap.accounts.default.encryption'),
-                        'validate_cert' => false,
-                        'username'      => config('imap.accounts.default.username'),
-                        'password'      => config('imap.accounts.default.password'),
-                        'protocol'      => 'imap',
-                    ],
-                ],
-            ])->account('default');
+            $cm     = new ClientManager(config('imap'));
+            $client = $cm->account('default');
 
             $client->connect();
             $folder  = $client->getFolder('INBOX');
@@ -59,16 +49,22 @@ class MailboxService
 
     private function parseEmail($msg): array
     {
-        $from = $msg->getFrom()[0] ?? null;
+        $from = $msg->getFrom()->first();
+
+        try {
+            $date = \Carbon\Carbon::parse((string) $msg->getDate())->toDateTimeString();
+        } catch (\Exception) {
+            $date = now()->toDateTimeString();
+        }
 
         return [
             'id'          => (string) $msg->getMessageId(),
-            'from_name'   => $from ? $from->personal : null,
-            'from_email'  => $from ? $from->mail : '',
+            'from_name'   => $from?->personal ?? null,
+            'from_email'  => $from?->mail ?? '',
             'subject'     => (string) $msg->getSubject(),
             'body_text'   => (string) $msg->getTextBody(),
             'body_html'   => (string) $msg->getHtmlBody(),
-            'received_at' => $msg->getDate()->toDateTimeString(),
+            'received_at' => $date,
             'is_read'     => false,
             'attachments' => [],
         ];

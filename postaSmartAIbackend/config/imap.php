@@ -10,6 +10,11 @@ return [
             'username'      => env('IMAP_USERNAME', ''),
             'password'      => env('IMAP_PASSWORD', ''),
             'protocol'      => 'imap',
+            'options'       => [
+                'sequence'    => \Webklex\PHPIMAP\IMAP::ST_UID,
+                'fetch_flags' => true,
+                'open'        => [],
+            ],
         ],
     ],
 ];

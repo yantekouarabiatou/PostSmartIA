@@ -116,7 +116,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     <TooltipProvider delayDuration={0}>
       <aside
         className={cn(
-          "fixed left-0 top-0 z-40 h-screen flex flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300",
+          "fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] flex flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300",
           collapsed ? "w-16" : "w-64"
         )}
       >
