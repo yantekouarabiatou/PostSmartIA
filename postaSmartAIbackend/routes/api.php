@@ -9,6 +9,7 @@ use App\Http\Controllers\EmailInboxController;
 use App\Http\Controllers\KnowledgeBaseController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -62,19 +63,35 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/notifications/{id}/read',            [NotificationController::class, 'markAsRead']);
     Route::put('/notifications/read-all',             [NotificationController::class, 'markAllAsRead']);
 
-    // ─── Manager + Admin ────────────────────────────────────────────────────
-    Route::middleware('role:manager,admin')->group(function () {
+    // ─── Gestion utilisateurs ───────────────────────────────────────────────
+    Route::middleware('check.permission:view users')->group(function () {
         Route::get('/users', [UserController::class, 'index']);
     });
 
-    // ─── Admin uniquement ───────────────────────────────────────────────────
-    Route::middleware('role:admin')->group(function () {
-        Route::post('/users',                    [UserController::class, 'store']);
-        Route::get('/users/{id}',                [UserController::class, 'show']);
-        Route::put('/users/{id}',                [UserController::class, 'update']);
-        Route::delete('/users/{id}',             [UserController::class, 'destroy']);
-        Route::put('/users/{id}/toggle-active',  [UserController::class, 'toggleActive']);
+    Route::middleware('check.permission:create users')->group(function () {
+        Route::post('/users', [UserController::class, 'store']);
+    });
 
+    Route::middleware('check.permission:edit users')->group(function () {
+        Route::get('/users/{id}',               [UserController::class, 'show']);
+        Route::put('/users/{id}',               [UserController::class, 'update']);
+        Route::put('/users/{id}/toggle-active', [UserController::class, 'toggleActive']);
+    });
+
+    Route::middleware('check.permission:delete users')->group(function () {
+        Route::delete('/users/{id}', [UserController::class, 'destroy']);
+    });
+
+    // ─── Journaux d'activité ────────────────────────────────────────────────
+    Route::middleware('check.permission:view logs')->group(function () {
         Route::get('/logs', [LogController::class, 'index']);
+    });
+
+    // ─── Gestion des permissions ────────────────────────────────────────────
+    Route::middleware('check.permission:manage permissions')->group(function () {
+        Route::get('/permissions',               [PermissionController::class, 'index']);
+        Route::post('/permissions/assign-role',  [PermissionController::class, 'assignRole']);
+        Route::post('/permissions/assign',       [PermissionController::class, 'assignPermission']);
+        Route::post('/permissions/revoke',       [PermissionController::class, 'revokePermission']);
     });
 });

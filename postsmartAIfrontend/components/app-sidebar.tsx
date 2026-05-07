@@ -18,6 +18,7 @@ import {
   Bell,
   Users,
   Shield,
+  KeyRound,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -104,7 +105,10 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
       ? [{ title: "Gestion utilisateurs", href: "/dashboard/users", icon: Users }]
       : []),
     ...(isAdmin
-      ? [{ title: "Journaux d'activité", href: "/dashboard/logs", icon: Shield }]
+      ? [
+          { title: "Journaux d'activité",   href: "/dashboard/logs",        icon: Shield },
+          { title: "Gestion des permissions", href: "/dashboard/permissions", icon: KeyRound },
+        ]
       : []),
   ]
 
