@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Mail, Phone, Bot, Check, Star, ChevronDown, Mic } from "lucide-react"
+import { Mail, Bot, Check, Star, ChevronDown, Mic } from "lucide-react"
 import { DrawerBackground } from "@/components/DrawerBackground"
 
 // ── Data ───────────────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ const TESTIMONIALS = [
     bg: "#0066CC",
     name: "Sophie M.",
     role: "Conseillère · Paris",
-    quote: "PostAssist m'a changé la vie ! Je traite mes mails deux fois plus vite et mes réponses sont bien plus professionnelles.",
+    quote: "PostSmartAI m'a changé la vie ! Je traite mes mails deux fois plus vite et mes réponses sont bien plus professionnelles.",
   },
   {
     initials: "KB",
@@ -479,7 +479,7 @@ export default function LandingPage() {
               relation client d'<span className="accent">excellence</span>
             </h1>
             <p className="ld-hero-sub">
-              PostAssist aide les conseillers La Poste à rédiger des réponses
+              PostSmartAI aide les conseillers La Poste à rédiger des réponses
               impeccables, gérer les comptes-rendus d'appel et accéder aux procédures
               en temps réel.
             </p>
@@ -571,11 +571,11 @@ export default function LandingPage() {
           <div className="ld-cta-inner">
             <h2 className="ld-cta-title">Prêt à transformer<br />votre relation client ?</h2>
             <p className="ld-cta-sub">
-              Rejoignez les équipes La Poste qui font confiance à PostAssist
+              Rejoignez les équipes La Poste qui font confiance à PostSmartAI
               pour chaque échange client.
             </p>
             <Link href="/login" className="ld-cta-primary">
-              Accéder à PostAssist
+              Accéder à PostSmartAI
             </Link>
           </div>
         </section>
@@ -599,7 +599,7 @@ export default function LandingPage() {
             </div>
 
             <span className="ld-footer-copy">
-              © 2026 PostAssist — La Poste × EY × Microsoft
+              © 2026 PostSmartAI — La Poste × EY × Microsoft
             </span>
           </div>
         </footer>

@@ -10,7 +10,8 @@ class RegisterRequest extends FormRequest
     public function authorize(): bool
     {
         // Only admins can create users
-        return $this->user() && $this->user()->isAdmin();
+        return $this->user() 
+        && $this->user()->isAdmin();
     }
 
     public function rules(): array
