@@ -14,14 +14,7 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => [
-        'http://localhost:5173',
-        'http://localhost:3000',
-        'http://127.0.0.1:5173',
-        'http://127.0.0.1:3000',
-        // Add your production frontend URL here
-        // 'https://postsmartai.com',
-    ],
+    'allowed_origins' => ['*'],
 
     'allowed_origins_patterns' => [],
 
@@ -34,5 +27,5 @@ return [
 
     'max_age' => 86400,
 
-    'supports_credentials' => true,
+    'supports_credentials' => false,
 ];
