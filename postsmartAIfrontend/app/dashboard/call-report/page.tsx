@@ -1,30 +1,42 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState } from "react"
 import {
-  Phone, Sparkles, Copy, Check, Mic, MicOff, AlertCircle, FileText,
+  Phone, Sparkles, Copy, Check, RotateCcw, X, AlertCircle, FileText, Save,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { api, type GeneratedEmail } from "@/lib/api"
+import VoiceRecorder from "@/components/voice-recorder"
+import AppSelect, { type SelectOption } from "@/components/ui/app-select"
+import QualityScore from "@/components/ui/quality-score"
+async function exportCallReportToPdf(payload: any) {
+  if (typeof window === 'undefined') return
+  const mod = await import("@/lib/export-pdf")
+  return mod.exportCallReportToPdf(payload)
+}
 
-const REQUEST_TYPES = [
-  "Réclamation",
-  "Suivi colis / envoi",
-  "Information offre / tarif",
-  "Signalement incident",
-  "Escalade médiateur",
-  "Situation de handicap",
-  "Demande de remboursement",
-  "Changement d'adresse",
-  "Autre",
+const REQUEST_TYPE_OPTIONS: SelectOption[] = [
+  { value: "Suivi de colis",           label: "📦 Suivi de colis" },
+  { value: "Réclamation",              label: "⚠️ Réclamation" },
+  { value: "Information offre",        label: "ℹ️ Information offre" },
+  { value: "Problème livraison",       label: "🚚 Problème livraison" },
+  { value: "Question facturation",     label: "💳 Question facturation" },
+  { value: "Situation de handicap",    label: "♿ Situation de handicap" },
+  { value: "Escalade médiateur",       label: "🚨 Escalade médiateur" },
+  { value: "Autre",                    label: "📝 Autre" },
 ]
+
+const URGENCY_PILLS = [
+  { value: "faible",  label: "🟢 Faible",  active: "bg-green-100 text-green-700 border-green-400 dark:bg-green-900/30 dark:text-green-400" },
+  { value: "normale", label: "🟡 Normale", active: "bg-yellow-100 text-yellow-700 border-yellow-400 dark:bg-yellow-900/30 dark:text-yellow-400" },
+  { value: "haute",   label: "🔴 Haute",   active: "bg-red-100 text-red-700 border-red-400 dark:bg-red-900/30 dark:text-red-400" },
+] as const
+
+type Urgency = "faible" | "normale" | "haute"
 
 function ScoreBar({ label, value }: { label: string; value: number }) {
   const color = value >= 80 ? "bg-green-500" : value >= 60 ? "bg-yellow-500" : "bg-red-500"
@@ -32,120 +44,72 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
     <div className="space-y-1">
       <div className="flex justify-between text-xs font-medium">
         <span className="text-muted-foreground">{label}</span>
-        <span className="text-foreground">{value}/100</span>
+        <span className="font-semibold">{value}/100</span>
       </div>
       <div className="h-1.5 rounded-full bg-muted">
-        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${value}%` }} />
+        <div className={cn("h-full rounded-full transition-all duration-500", color)} style={{ width: `${value}%` }} />
       </div>
     </div>
   )
 }
 
-// Web Speech API types
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognition
-    webkitSpeechRecognition: new () => SpeechRecognition
-  }
-}
-
-interface SpeechRecognition extends EventTarget {
-  lang: string
-  continuous: boolean
-  interimResults: boolean
-  start(): void
-  stop(): void
-  onresult: ((event: SpeechRecognitionEvent) => void) | null
-  onerror: ((event: Event) => void) | null
-  onend: (() => void) | null
-}
-
-interface SpeechRecognitionEvent extends Event {
-  results: SpeechRecognitionResultList
-}
-
-interface SpeechRecognitionResultList {
-  length: number
-  item(index: number): SpeechRecognitionResult
-  [index: number]: SpeechRecognitionResult
-}
-
-interface SpeechRecognitionResult {
-  isFinal: boolean
-  [index: number]: SpeechRecognitionAlternative
-}
-
-interface SpeechRecognitionAlternative {
-  transcript: string
+function Toast({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-5 py-3 shadow-lg dark:border-green-800 dark:bg-green-950">
+      <Check className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0" />
+      <span className="text-sm font-medium text-green-800 dark:text-green-200">{message}</span>
+      <button onClick={onClose} className="ml-2 text-green-600 hover:text-green-800 dark:text-green-400">
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
 }
 
 export default function CallReportPage() {
-  const [clientName, setClientName] = useState("")
-  const [requestType, setRequestType] = useState("")
-  const [callSummary, setCallSummary] = useState("")
-  const [commitments, setCommitments] = useState("")
-  const [nextSteps, setNextSteps] = useState("")
+  const [clientName, setClientName]     = useState("")
+  const [clientEmail, setClientEmail]   = useState("")
+  const [clientPhone, setClientPhone]   = useState("")
+  const [requestType, setRequestType]   = useState("")
+  const [callSummary, setCallSummary]   = useState("")
+  const [commitments, setCommitments]   = useState("")
+  const [nextSteps, setNextSteps]       = useState("")
+  const [urgency, setUrgency]           = useState<Urgency>("normale")
+  const [callDuration, setCallDuration] = useState("")
 
-  const [result, setResult] = useState<GeneratedEmail | null>(null)
-  const [editedBody, setEditedBody] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [result, setResult]           = useState<GeneratedEmail | null>(null)
+  const [editedSubject, setEditedSubject] = useState("")
+  const [editedBody, setEditedBody]   = useState("")
+  const [loading, setLoading]         = useState(false)
+  const [saving, setSaving]           = useState(false)
+  const [error, setError]             = useState<string | null>(null)
+  const [copied, setCopied]           = useState(false)
+  const [toast, setToast]             = useState<string | null>(null)
 
-  // Voice dictation
-  const [isListening, setIsListening] = useState(false)
-  const [speechSupported, setSpeechSupported] = useState(false)
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
-
-  useEffect(() => {
-    const SpeechAPI = window.SpeechRecognition ?? window.webkitSpeechRecognition
-    setSpeechSupported(!!SpeechAPI)
-    if (!SpeechAPI) return
-
-    const recognition = new SpeechAPI()
-    recognition.lang = "fr-FR"
-    recognition.continuous = true
-    recognition.interimResults = true
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let transcript = ""
-      for (let i = 0; i < event.results.length; i++) {
-        transcript += event.results[i][0].transcript
-      }
-      setCallSummary(transcript)
-    }
-
-    recognition.onerror = () => setIsListening(false)
-    recognition.onend = () => setIsListening(false)
-
-    recognitionRef.current = recognition
-  }, [])
-
-  function toggleListening() {
-    if (!recognitionRef.current) return
-    if (isListening) {
-      recognitionRef.current.stop()
-      setIsListening(false)
-    } else {
-      setCallSummary("")
-      recognitionRef.current.start()
-      setIsListening(true)
-    }
+  function handleTranscript(text: string, field: string) {
+    if (field === "resume")           setCallSummary(prev => prev + text)
+    else if (field === "engagements") setCommitments(prev => prev + text)
+    else if (field === "prochaines_etapes") setNextSteps(prev => prev + text)
   }
 
   async function handleGenerate() {
     if (!clientName.trim() || !requestType || !callSummary.trim()) return
     setLoading(true)
     setError(null)
+    setResult(null)
     try {
-      const data = await api.post<GeneratedEmail>("/ai/call-report", {
-        client_name: clientName,
-        request_type: requestType,
-        call_summary: callSummary,
-        commitments,
-        next_steps: nextSteps,
+      const data = await api.post<GeneratedEmail>("/call-reports/generate", {
+        client_name:   clientName,
+        client_email:  clientEmail || null,
+        client_phone:  clientPhone || null,
+        demand_type:   requestType,
+        call_summary:  callSummary,
+        commitments:   commitments || null,
+        next_steps:    nextSteps || null,
+        urgency,
+        call_duration: callDuration ? parseInt(callDuration) : null,
       })
       setResult(data)
+      setEditedSubject(data.subject)
       setEditedBody(data.body)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erreur lors de la génération")
@@ -154,136 +118,210 @@ export default function CallReportPage() {
     }
   }
 
+  async function handleSave() {
+    if (!result) return
+    setSaving(true)
+    setError(null)
+    try {
+      await api.post("/call-reports", {
+        client_name:        clientName,
+        client_email:       clientEmail || null,
+        client_phone:       clientPhone || null,
+        demand_type:        requestType,
+        call_summary:       callSummary,
+        commitments:        commitments || null,
+        next_steps:         nextSteps || null,
+        urgency,
+        call_duration:      callDuration ? parseInt(callDuration) : null,
+        ai_response:        result.body,
+        validated_response: editedBody,
+        ai_quality_score:   result.quality_score,
+      })
+      setToast("Mail post-appel enregistré avec succès ✓")
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Erreur lors de l'enregistrement")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   function handleCopy() {
     const text = editedBody || result?.body || ""
     if (!text) return
-    navigator.clipboard.writeText(text)
+    navigator.clipboard.writeText(`Objet : ${editedSubject}\n\n${text}`)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
 
+  function handleReset() {
+    setResult(null)
+    setEditedSubject("")
+    setEditedBody("")
+    setError(null)
+  }
+
   const isValid = clientName.trim() && requestType && callSummary.trim()
+  const qs = result?.quality_score
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
+      {toast && <Toast message={toast} onClose={() => setToast(null)} />}
+
       {/* Header */}
-      <div className="space-y-1">
-        <h1 className="text-2xl lg:text-3xl font-bold text-foreground">Compte-rendu d&apos;appel</h1>
-        <p className="text-muted-foreground">
-          Renseignez les éléments de l&apos;appel pour générer un mail post-appel structuré.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-2xl lg:text-3xl font-bold text-foreground flex items-center gap-2">
+            <Phone className="h-6 w-6 text-primary" />
+            Compte-rendu d&apos;appel
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Saisissez ou dictez le résumé de votre échange client pour générer un mail post-appel.
+          </p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-green-300 bg-green-50 px-3 py-1 text-xs font-medium text-green-700 dark:border-green-800 dark:bg-green-950/40 dark:text-green-400">
+          🔒 Aucun audio conservé — conforme RGPD
+        </span>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        {/* ── Left: form ────────────────────────────────────────────────── */}
+        {/* ── Left: formulaire ───────────────────────────────────────── */}
         <div className="space-y-4">
           <Card className="border-border/50">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base text-foreground">
+              <CardTitle className="flex items-center gap-2 text-base">
                 <Phone className="h-4 w-4 text-primary" />
                 Informations de l&apos;appel
               </CardTitle>
               <CardDescription>Les champs marqués * sont obligatoires</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Client name */}
+
+              {/* Nom client */}
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">
+                <label className="text-sm font-medium">
                   Nom du client <span className="text-destructive">*</span>
                 </label>
                 <Input
-                  placeholder="Ex : Marie Martin"
+                  placeholder="Ex : Marie Dupont"
                   value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
+                  onChange={e => setClientName(e.target.value)}
                 />
               </div>
 
-              {/* Request type */}
+              {/* Email + Téléphone */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-muted-foreground">Email client</label>
+                  <Input
+                    type="email"
+                    placeholder="marie.dupont@gmail.com"
+                    value={clientEmail}
+                    onChange={e => setClientEmail(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-muted-foreground">Téléphone</label>
+                  <Input
+                    type="tel"
+                    placeholder="06 00 00 00 00"
+                    value={clientPhone}
+                    onChange={e => setClientPhone(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Type de demande */}
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">
+                <label className="text-sm font-medium">
                   Type de demande <span className="text-destructive">*</span>
                 </label>
-                <Select value={requestType} onValueChange={setRequestType}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner le type…" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {REQUEST_TYPES.map((t) => (
-                      <SelectItem key={t} value={t}>{t}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <AppSelect
+                  options={REQUEST_TYPE_OPTIONS}
+                  value={REQUEST_TYPE_OPTIONS.find(o => o.value === requestType) ?? null}
+                  onChange={(opt) => setRequestType((opt as SelectOption | null)?.value ?? "")}
+                  placeholder="Sélectionner le type…"
+                  isClearable
+                />
               </div>
 
-              {/* Call summary + voice dictation */}
+              {/* Résumé + dictée vocale */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-foreground">
+                  <label className="text-sm font-medium">
                     Résumé de l&apos;échange <span className="text-destructive">*</span>
                   </label>
-                  {speechSupported && (
-                    <Button
-                      type="button"
-                      variant={isListening ? "destructive" : "outline"}
-                      size="sm"
-                      className="h-7 gap-1.5 text-xs"
-                      onClick={toggleListening}
-                    >
-                      {isListening ? (
-                        <><MicOff className="h-3.5 w-3.5" /> Arrêter</>
-                      ) : (
-                        <><Mic className="h-3.5 w-3.5" /> Dicter</>
-                      )}
-                    </Button>
-                  )}
+                  <VoiceRecorder onTranscript={handleTranscript} targetField="resume" />
                 </div>
-                <div className="relative">
-                  <Textarea
-                    placeholder={
-                      isListening
-                        ? "Parlez maintenant… (transcription en direct)"
-                        : "Décrivez librement le déroulé de l'appel…"
-                    }
-                    value={callSummary}
-                    onChange={(e) => setCallSummary(e.target.value)}
-                    className={cn(
-                      "min-h-[130px] resize-none text-sm",
-                      isListening && "border-red-400 bg-red-50/30 focus-visible:ring-red-400"
-                    )}
-                  />
-                  {isListening && (
-                    <div className="absolute top-2 right-2 flex items-center gap-1.5">
-                      <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-                      <span className="text-xs text-red-500 font-medium">REC</span>
-                    </div>
-                  )}
-                </div>
-                {!speechSupported && (
-                  <p className="text-xs text-muted-foreground">
-                    La dictée vocale n&apos;est pas disponible sur ce navigateur.
-                  </p>
-                )}
+                <Textarea
+                  placeholder="Décrivez l'échange avec le client…"
+                  value={callSummary}
+                  onChange={e => setCallSummary(e.target.value)}
+                  className="min-h-[130px] resize-none text-sm"
+                />
               </div>
 
-              {/* Commitments */}
+              {/* Engagements + dictée */}
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">Engagements pris</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-muted-foreground">Engagements pris</label>
+                  <VoiceRecorder onTranscript={handleTranscript} targetField="engagements" />
+                </div>
                 <Textarea
-                  placeholder="Ex : Remboursement sous 5 jours ouvrés, envoi d'un bon de réexpédition…"
+                  placeholder="Ex : Remboursement sous 5 jours, rappel client prévu…"
                   value={commitments}
-                  onChange={(e) => setCommitments(e.target.value)}
+                  onChange={e => setCommitments(e.target.value)}
                   className="min-h-[80px] resize-none text-sm"
                 />
               </div>
 
-              {/* Next steps */}
+              {/* Prochaines étapes + dictée */}
               <div className="space-y-1.5">
-                <label className="text-sm font-medium text-foreground">Prochaines étapes</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-muted-foreground">Prochaines étapes</label>
+                  <VoiceRecorder onTranscript={handleTranscript} targetField="prochaines_etapes" />
+                </div>
                 <Textarea
-                  placeholder="Ex : Rappel client le 10/06, escalade au service logistique…"
+                  placeholder="Ex : Envoyer mail de confirmation, ouvrir dossier réclamation…"
                   value={nextSteps}
-                  onChange={(e) => setNextSteps(e.target.value)}
-                  className="min-h-[70px] resize-none text-sm"
+                  onChange={e => setNextSteps(e.target.value)}
+                  className="min-h-[80px] resize-none text-sm"
+                />
+              </div>
+
+              {/* Urgence pills */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-muted-foreground">Niveau d&apos;urgence</label>
+                <div className="flex gap-2 flex-wrap">
+                  {URGENCY_PILLS.map(pill => (
+                    <button
+                      key={pill.value}
+                      type="button"
+                      onClick={() => setUrgency(pill.value)}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
+                        urgency === pill.value
+                          ? pill.active
+                          : "border-border text-muted-foreground hover:border-foreground/30"
+                      )}
+                    >
+                      {pill.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Durée */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-muted-foreground">
+                  Durée de l&apos;appel (minutes)
+                </label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="Ex : 8"
+                  value={callDuration}
+                  onChange={e => setCallDuration(e.target.value)}
+                  className="w-32"
                 />
               </div>
 
@@ -315,7 +353,7 @@ export default function CallReportPage() {
           </Card>
         </div>
 
-        {/* ── Right: generated email ────────────────────────────────────── */}
+        {/* ── Right: résultat ────────────────────────────────────────── */}
         <div>
           <Card className={cn(
             "border-border/50",
@@ -323,35 +361,124 @@ export default function CallReportPage() {
           )}>
             {result ? (
               <>
-                <CardHeader className="flex flex-row items-center justify-between pb-3">
-                  <div>
-                    <CardTitle className="text-base text-foreground">Mail généré</CardTitle>
-                    <CardDescription className="mt-1">Objet : {result.subject}</CardDescription>
-                  </div>
-                  <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleCopy}>
-                    {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-                  </Button>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <Textarea
-                    value={editedBody}
-                    onChange={(e) => setEditedBody(e.target.value)}
-                    className="min-h-[280px] resize-none text-sm font-mono leading-relaxed"
-                  />
-
-                  {result.quality_score && (
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Score qualité</p>
-                      <ScoreBar label="Clarté" value={result.quality_score.clarity} />
-                      <ScoreBar label="Empathie" value={result.quality_score.empathy} />
-                      <ScoreBar label="Conformité" value={result.quality_score.compliance} />
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        Mail post-appel généré
+                      </CardTitle>
+                      <CardDescription className="mt-1">
+                        Modifiez si besoin avant de valider
+                      </CardDescription>
                     </div>
-                  )}
+                    {qs?.overall !== undefined && (
+                      <span className={cn(
+                        "rounded-full px-2.5 py-0.5 text-xs font-bold border",
+                        qs.overall >= 80
+                          ? "bg-green-100 text-green-700 border-green-300"
+                          : qs.overall >= 60
+                          ? "bg-yellow-100 text-yellow-700 border-yellow-300"
+                          : "bg-red-100 text-red-700 border-red-300"
+                      )}>
+                        Score {qs.overall}/100
+                      </span>
+                    )}
+                  </div>
+                </CardHeader>
 
-                  <Button className="w-full gap-2" onClick={handleCopy}>
-                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                    {copied ? "Copié !" : "Copier pour Outlook"}
-                  </Button>
+                <CardContent className="space-y-4">
+                  {/* Scores qualité */}
+                  {qs && <QualityScore scores={qs} />}
+
+                  {/* Objet éditable */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Objet
+                    </label>
+                    <Input
+                      value={editedSubject}
+                      onChange={e => setEditedSubject(e.target.value)}
+                      className="text-sm font-medium"
+                    />
+                  </div>
+
+                  {/* Corps éditable */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Corps du mail
+                    </label>
+                    <Textarea
+                      value={editedBody}
+                      onChange={e => setEditedBody(e.target.value)}
+                      className="min-h-[280px] resize-none text-sm font-mono leading-relaxed"
+                    />
+                  </div>
+
+                  {/* Boutons d'action */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="gap-1.5 bg-green-600 hover:bg-green-700 text-white"
+                    >
+                      {saving ? (
+                        <span className="h-3.5 w-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <Save className="h-3.5 w-3.5" />
+                      )}
+                      Valider et enregistrer
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={handleCopy}
+                      className="gap-1.5"
+                    >
+                      {copied ? <Check className="h-3.5 w-3.5 text-green-600" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copied ? "Copié !" : "Copier"}
+                    </Button>
+
+                    <Button
+                      variant="secondary"
+                      onClick={handleGenerate}
+                      disabled={loading}
+                      className="gap-1.5"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Régénérer
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => exportCallReportToPdf({
+                        id: 0,
+                        client_name:        clientName,
+                        client_email:       clientEmail || null,
+                        client_phone:       clientPhone || null,
+                        demand_type:        requestType,
+                        urgency,
+                        call_duration:      callDuration ? parseInt(callDuration) : null,
+                        call_summary:       callSummary,
+                        commitments:        commitments || null,
+                        next_steps:         nextSteps || null,
+                        validated_response: editedBody || null,
+                        created_at:         new Date().toISOString(),
+                      })}
+                      className="gap-1.5"
+                    >
+                      📄 PDF
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      onClick={handleReset}
+                      className="gap-1.5 text-muted-foreground hover:text-destructive"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Annuler
+                    </Button>
+                  </div>
                 </CardContent>
               </>
             ) : (
@@ -360,7 +487,7 @@ export default function CallReportPage() {
                   <FileText className="h-7 w-7 text-muted-foreground" />
                 </div>
                 <div>
-                  <h3 className="font-semibold text-foreground text-sm">Aucun mail généré</h3>
+                  <h3 className="font-semibold text-sm">Aucun mail généré</h3>
                   <p className="text-xs text-muted-foreground mt-1 max-w-[200px]">
                     Remplissez le formulaire et cliquez sur &quot;Générer&quot;.
                   </p>

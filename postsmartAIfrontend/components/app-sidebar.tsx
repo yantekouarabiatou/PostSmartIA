@@ -95,7 +95,7 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
     localStorage.removeItem("auth_token")
     localStorage.removeItem("auth_user")
     localStorage.removeItem("remember_me")
-    router.push("/login")
+    router.push("/")
   }
 
   const isManagerOrAdmin = user?.role === "manager" || user?.role === "admin"

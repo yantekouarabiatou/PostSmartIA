@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import AppDataTable from "@/components/ui/AppDataTable"
+import AppSelect, { type SelectOption } from "@/components/ui/app-select"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 
@@ -88,23 +89,19 @@ function RoleModal({
           {user.first_name} {user.last_name}
         </p>
 
-        <label style={{ fontSize: "12px", fontWeight: 600, color: "#374151", display: "block", marginBottom: "6px" }}>
-          Rôle
-        </label>
-        <select
-          value={selected}
-          onChange={e => setSelected(e.target.value)}
-          style={{
-            width: "100%", padding: "9px 12px", borderRadius: "8px",
-            border: "1px solid #D1D5DB", fontSize: "14px", marginBottom: "20px",
-          }}
-        >
-          {roles.map(r => (
-            <option key={r.id} value={r.name}>
-              {r.name.charAt(0).toUpperCase() + r.name.slice(1)}
-            </option>
-          ))}
-        </select>
+        <div style={{ marginBottom: "20px" }}>
+          <AppSelect
+            label="Rôle"
+            required
+            options={roles.map(r => ({
+              value: r.name,
+              label: r.name.charAt(0).toUpperCase() + r.name.slice(1),
+            }))}
+            value={roles.length ? { value: selected, label: selected.charAt(0).toUpperCase() + selected.slice(1) } : null}
+            onChange={(opt) => setSelected((opt as SelectOption | null)?.value ?? selected)}
+            isSearchable={false}
+          />
+        </div>
 
         {error && <p style={{ color: "#DC2626", fontSize: "13px", marginBottom: "12px" }}>{error}</p>}
 

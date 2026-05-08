@@ -7,6 +7,11 @@ import { cn } from "@/lib/utils"
 import toast, { Toaster } from "react-hot-toast"
 import { format, formatDistanceToNow } from "date-fns"
 import { fr } from "date-fns/locale"
+import QualityScore from "@/components/ui/quality-score"
+import MailDiff from "@/components/ui/mail-diff"
+import dynamic from "next/dynamic"
+
+const exportEmailToPdf = dynamic(() => import("@/lib/export-pdf").then(m => m.exportEmailToPdf), { ssr: false })
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -116,6 +121,7 @@ export default function IncomingPage() {
   const [editedSubject, setEditedSubject] = useState("")
   const [editedBody, setEditedBody] = useState("")
   const [analysisOpen, setAnalysisOpen] = useState(true)
+  const [showDiff, setShowDiff] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
 
@@ -392,17 +398,11 @@ export default function IncomingPage() {
           </div>
 
           {/* Quality scores */}
-          {(aiResult?.response.quality_score || selected.ai_quality_score_json) && (() => {
-            const qs = aiResult?.response.quality_score ?? selected.ai_quality_score_json ?? {}
-            return (
-              <div style={{ marginBottom: 16 }}>
-                <p style={{ fontSize: 12, fontWeight: 700, color: "#9CA3AF", textTransform: "uppercase", marginBottom: 8 }}>Score qualité</p>
-                {Object.entries(qs).map(([k, v]) => (
-                  <ScoreBar key={k} label={k.charAt(0).toUpperCase() + k.slice(1)} value={v as number} />
-                ))}
-              </div>
-            )
-          })()}
+          {(aiResult?.response.quality_score || selected.ai_quality_score_json) && (
+            <div style={{ marginBottom: 16 }}>
+              <QualityScore scores={aiResult?.response.quality_score ?? selected.ai_quality_score_json ?? {}} />
+            </div>
+          )}
 
           {/* Analysis accordion */}
           {aiResult?.analysis && (
@@ -450,6 +450,28 @@ export default function IncomingPage() {
             }} />
           </div>
 
+          {/* Diff toggle */}
+          {aiResult && (
+            <div style={{ marginBottom: 8 }}>
+              <button
+                onClick={() => setShowDiff(v => !v)}
+                style={{
+                  fontSize: 12, padding: "5px 12px", borderRadius: 8,
+                  border: "1px solid #C7D9F5",
+                  background: showDiff ? "#EBF4FF" : "#fff",
+                  color: "#0066CC", cursor: "pointer", fontWeight: 500,
+                }}
+              >
+                {showDiff ? "Masquer" : "Voir"} les modifications IA
+              </button>
+              <MailDiff
+                original={aiResult.response.body}
+                improved={editedBody}
+                show={showDiff}
+              />
+            </div>
+          )}
+
           {/* Validation buttons */}
           <div style={{ display: "flex", gap: 10 }}>
             <button onClick={() => handleValidate("validate")} style={{
@@ -487,6 +509,18 @@ export default function IncomingPage() {
             display: "flex", alignItems: "center", gap: 6,
           }}>
             <Archive size={14} /> Archiver
+          </button>
+        )}
+        {(selected.status === "resolved" || selected.status === "archived") && (
+          <button
+            onClick={() => exportEmailToPdf(selected)}
+            style={{
+              padding: "9px 16px", borderRadius: 8, border: "1px solid #7C3AED", cursor: "pointer",
+              background: "#fff", color: "#7C3AED", fontWeight: 500, fontSize: 13,
+              display: "flex", alignItems: "center", gap: 6,
+            }}
+          >
+            📄 Exporter PDF
           </button>
         )}
         <button onClick={load} style={{

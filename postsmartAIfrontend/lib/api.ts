@@ -19,6 +19,16 @@ async function request<T>(
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
 
+  if (res.status === 401) {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token')
+      localStorage.removeItem('auth_user')
+      localStorage.removeItem('remember_me')
+      window.location.href = '/'
+    }
+    throw new Error('Session expirée')
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }))
     throw new Error(err.message ?? `HTTP ${res.status}`)
@@ -67,6 +77,7 @@ export interface GeneratedEmail {
     clarity: number
     empathy: number
     compliance: number
+    overall?: number
   }
 }
 

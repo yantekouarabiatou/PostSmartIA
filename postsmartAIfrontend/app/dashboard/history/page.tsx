@@ -16,6 +16,11 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
+async function exportHistoryEmailToPdf(record: EmailRecord) {
+  if (typeof window === 'undefined') return
+  const mod = await import("@/lib/export-pdf")
+  return mod.exportHistoryEmailToPdf(record)
+}
 
 interface EmailRecord {
   id: number
@@ -295,9 +300,20 @@ export default function HistoryPage() {
               {viewItem?.content}
             </pre>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" />
-            {viewItem && `Créé le ${formatDate(viewItem.created_at)} à ${formatTime(viewItem.created_at)}`}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Clock className="h-3 w-3" />
+              {viewItem && `Créé le ${formatDate(viewItem.created_at)} à ${formatTime(viewItem.created_at)}`}
+            </div>
+            {viewItem && (
+              <Button
+                variant="outline" size="sm"
+                onClick={() => exportHistoryEmailToPdf(viewItem)}
+                className="gap-1.5 text-xs"
+              >
+                📄 Exporter PDF
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

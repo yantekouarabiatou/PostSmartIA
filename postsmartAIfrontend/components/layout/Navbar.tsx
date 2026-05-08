@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import { api } from "@/lib/api"
+import GlobalSearch from "@/components/ui/global-search"
 
 interface AuthUser {
   id: number
@@ -103,7 +104,7 @@ export default function Navbar() {
     localStorage.removeItem("auth_token")
     localStorage.removeItem("auth_user")
     localStorage.removeItem("remember_me")
-    router.push("/login")
+    router.push("/")
   }
 
   const initials = user
@@ -154,6 +155,9 @@ export default function Navbar() {
           {item.label}
         </Link>
       ))}
+
+      {/* Global search */}
+      <GlobalSearch />
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
@@ -300,6 +304,9 @@ export default function Navbar() {
 
             {/* Menu items */}
             {[
+              { label: "👤 Mon profil",          path: "/dashboard/profile" },
+              { label: "🏠 Page d'accueil",      path: "/" },
+              { label: "🔑 Page de connexion",   path: "/login" },
               ...(isManagerOrAdmin ? [{ label: "👥 Gestion utilisateurs", path: "/dashboard/users" }] : []),
               ...(isAdmin ? [{ label: "🔐 Journaux d'activité", path: "/dashboard/logs" }] : []),
             ].map(item => (
