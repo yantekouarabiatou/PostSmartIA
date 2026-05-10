@@ -1,6 +1,4 @@
-// IMPORTANT: jspdf depends on Node/worker internals.
-// To avoid Next.js SSR/build-time failures, we lazy-load jspdf only in the browser.
-
+import type jsPDF from "jspdf"
 
 interface EmailRecord {
   id: number

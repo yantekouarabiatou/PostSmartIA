@@ -190,12 +190,13 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
     {
         return $this->completeJson(
             [['role' => 'user', 'content' =>
-                "Génère un mail post-appel structuré. Retourne un JSON :
+                "Génère un mail post-appel structuré destiné au client. Retourne un JSON :
                 {
                   \"subject\": \"Objet du mail\",
-                  \"body\": \"Corps complet du mail\",
-                  \"quality_score\": { \"clarity\": 0, \"empathy\": 0, \"overall\": 0 }
+                  \"body\": \"Corps complet du mail professionnel et empathique\",
+                  \"quality_score\": { \"clarity\": 0, \"empathy\": 0, \"compliance\": 0, \"overall\": 0 }
                 }
+                Les scores sont des entiers entre 0 et 100.
                 Données de l'appel : $callData",
             ]],
             $this->systemPrompt()

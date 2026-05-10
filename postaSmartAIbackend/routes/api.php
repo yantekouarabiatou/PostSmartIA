@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AiController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CallReportController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmailHistoryController;
@@ -10,6 +11,8 @@ use App\Http\Controllers\KnowledgeBaseController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PermissionController;
+use App\Http\Controllers\ProfileStatsController;
+use App\Http\Controllers\SearchController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
@@ -64,6 +67,19 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Chat assistant
     Route::post('/chat/assistant', [ChatController::class, 'assistant']);
+
+    // Comptes-rendus d'appel
+    Route::prefix('call-reports')->group(function () {
+        Route::get('/',           [CallReportController::class, 'index']);
+        Route::post('/generate',  [CallReportController::class, 'generate']);
+        Route::post('/',          [CallReportController::class, 'store']);
+    });
+
+    // Recherche globale
+    Route::get('/search', [SearchController::class, 'global']);
+
+    // Statistiques profil
+    Route::get('/profile/stats', [ProfileStatsController::class, 'stats']);
 
     // Boîte mail IMAP
     Route::prefix('emails')->group(function () {

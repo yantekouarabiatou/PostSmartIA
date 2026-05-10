@@ -9,9 +9,11 @@ import { format, formatDistanceToNow } from "date-fns"
 import { fr } from "date-fns/locale"
 import QualityScore from "@/components/ui/quality-score"
 import MailDiff from "@/components/ui/mail-diff"
-import dynamic from "next/dynamic"
 
-const exportEmailToPdf = dynamic(() => import("@/lib/export-pdf").then(m => m.exportEmailToPdf), { ssr: false })
+async function exportEmailToPdf(email: Parameters<Awaited<typeof import("@/lib/export-pdf")>["exportEmailToPdf"]>[0]) {
+  const { exportEmailToPdf: fn } = await import("@/lib/export-pdf")
+  return fn(email)
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
