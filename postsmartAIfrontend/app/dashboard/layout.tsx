@@ -7,6 +7,7 @@ import { ChatPanel } from "@/components/chat-panel"
 import Navbar from "@/components/layout/Navbar"
 import DashboardFooter from "@/components/layout/DashboardFooter"
 import Onboarding from "@/components/ui/onboarding"
+import { LanguageProvider } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 export default function DashboardLayout({
@@ -29,20 +30,22 @@ export default function DashboardLayout({
   if (!ready) return null
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-      <AppSidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
-      <main
-        className={cn(
-          "transition-all duration-300 pt-16 pb-9",
-          collapsed ? "ml-16" : "ml-64"
-        )}
-      >
-        {children}
-      </main>
-      <ChatPanel />
-      <DashboardFooter />
-      <Onboarding />
-    </div>
+    <LanguageProvider>
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <AppSidebar collapsed={collapsed} onToggle={() => setCollapsed(!collapsed)} />
+        <main
+          className={cn(
+            "transition-all duration-300 pt-16 pb-9",
+            collapsed ? "ml-16" : "ml-64"
+          )}
+        >
+          {children}
+        </main>
+        <ChatPanel />
+        <DashboardFooter />
+        <Onboarding />
+      </div>
+    </LanguageProvider>
   )
 }
