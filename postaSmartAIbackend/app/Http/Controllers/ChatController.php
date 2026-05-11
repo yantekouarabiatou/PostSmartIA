@@ -38,6 +38,26 @@ class ChatController extends Controller
             $sources = [];
         }
 
+        // Détection de mots-clés d'escalade pour enrichir le contexte
+        $lastMessage      = end($request->messages)['content'] ?? '';
+        $escaladeKeywords = ['avocat', 'tribunal', 'plainte', 'poursuite', 'juridique', 'media', 'scandale', 'porter plainte'];
+        $mentionsEscalade = false;
+        foreach ($escaladeKeywords as $kw) {
+            if (stripos($lastMessage, $kw) !== false) {
+                $mentionsEscalade = true;
+                break;
+            }
+        }
+        if ($mentionsEscalade) {
+            $context .= "\n\n[ESCALADE — Procédures La Poste]\n" .
+                "- Menace avocat/tribunal → Escalade manager + service juridique immédiatement\n" .
+                "- Délai >48h non résolu → Service réclamations N2\n" .
+                "- Montant >100€ → Service réclamations spécialisé\n" .
+                "- Insatisfaction persistante (2+ réponses) → Manager\n" .
+                "- >2 mois sans résolution → Médiateur La Poste (médiateur-laposte.fr) — obligatoire légalement\n" .
+                "Guide le conseiller sur la procédure à suivre et propose une formulation mail adaptée.";
+        }
+
         try {
             $result = app(GeminiService::class)->chatAssistant($request->messages, $context);
         } catch (\Exception $e) {
@@ -50,7 +70,8 @@ class ChatController extends Controller
             }
         }
 
-        $result['sources'] = $sources ?? [];
+        $result['sources']        = $sources ?? [];
+        $result['escalade_alert'] = $mentionsEscalade;
         return ApiResponse::success($result, 'Réponse générée');
     }
 }

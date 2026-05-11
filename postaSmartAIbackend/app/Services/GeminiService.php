@@ -47,13 +47,13 @@ class GeminiService
         }
 
         $payload['generationConfig'] = [
-            'temperature'     => 0.7,
-            'maxOutputTokens' => 2048,
+            'temperature'     => 0.4,
+            'maxOutputTokens' => 1024,
         ];
 
         $url = "{$this->baseUrl}/models/{$this->model}:generateContent?key={$this->apiKey}";
 
-        $response = Http::withoutVerifying()->timeout(30)->post($url, $payload);
+        $response = Http::withoutVerifying()->timeout(60)->post($url, $payload);
 
         if ($response->failed()) {
             Log::error('Gemini API error', [
@@ -119,6 +119,56 @@ Tu ne dois jamais inventer d'informations. Si tu ne connais pas une procédure p
 indique-le clairement au conseiller et suggère de vérifier les ressources internes.";
     }
 
+    public function detectEscalationSignals(
+        string $emailContent,
+        string $serviceType,
+        ?string $previousStatus = null,
+        ?int $daysSinceFirstContact = null
+    ): array {
+        $truncated = substr(strip_tags($emailContent), 0, 1000);
+
+        $context = '';
+        if ($previousStatus)        $context .= "Statut précédent du dossier : $previousStatus. ";
+        if ($daysSinceFirstContact) $context .= "Jours depuis premier contact : $daysSinceFirstContact jours. ";
+
+        return $this->completeJson([
+            ['role' => 'user', 'content' =>
+                "Analyse ce mail client La Poste et détecte les signaux d'escalade.
+                $context
+                Type de demande : $serviceType
+
+                Règles d'escalade La Poste :
+                - DÉLAI : délai de réponse dépassé (>48h mail, >5j réclamation)
+                - INSATISFACTION : client mentionne insatisfaction après réponse précédente
+                - COMPLEXE : montant >100€, documents officiels, situation handicap, litige juridique
+                - MENACE : client mentionne avocat, tribunal, plainte formelle, médias
+                - MEDIATEUR : recours internes épuisés, >2 mois sans résolution
+
+                Retourne ce JSON :
+                {
+                  \"should_escalate\": true,
+                  \"urgency_level\": \"immediate|high|normal|none\",
+                  \"signals_detected\": [
+                    {
+                      \"type\": \"delai|insatisfaction|complexe|menace|mediateur\",
+                      \"description\": \"description courte du signal détecté\",
+                      \"quote\": \"extrait exact du mail qui déclenche ce signal\"
+                    }
+                  ],
+                  \"recommended_target\": \"manager|service_reclamations|specialiste|mediateur|none\",
+                  \"recommended_target_label\": \"libellé lisible\",
+                  \"suggested_message\": \"message suggéré pour expliquer l'escalade\",
+                  \"delay_days_exceeded\": null,
+                  \"estimated_amount\": null,
+                  \"legal_threat\": false,
+                  \"explanation\": \"explication claire en français pour le conseiller\"
+                }
+
+                Mail : $truncated"
+            ]
+        ], "Détecteur de signaux d'escalade La Poste. JSON uniquement.");
+    }
+
     public function analyzeEmail(string $emailContent): array
     {
         return $this->completeJson(
@@ -145,19 +195,24 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
         return $this->completeJson(
             [['role' => 'user', 'content' =>
                 "Génère une réponse professionnelle à ce mail client ($serviceType).
-                Retourne un JSON :
+                Retourne UNIQUEMENT ce JSON (les scores sont des entiers réels entre 0 et 100, PAS des zéros) :
                 {
                   \"subject\": \"Objet du mail de réponse\",
                   \"body\": \"Corps complet du mail\",
                   \"quality_score\": {
-                    \"clarity\": 0,
-                    \"empathy\": 0,
-                    \"compliance\": 0,
-                    \"overall\": 0
+                    \"clarity\":    85,
+                    \"empathy\":    80,
+                    \"compliance\": 90,
+                    \"overall\":    85
                   },
-                  \"tone\": \"professionnel|empathique|formel\",
+                  \"tone\": \"professionnel\",
                   \"warnings\": []
                 }
+                Évalue honnêtement la qualité de la réponse que tu génères sur ces 3 critères :
+                - clarity (clarté et structure) : 0-100
+                - empathy (ton empathique et humain) : 0-100
+                - compliance (conformité à la charte La Poste) : 0-100
+                - overall : moyenne pondérée des 3 scores
                 Mail original : $emailContent",
             ]],
             $this->systemPrompt()
@@ -203,19 +258,44 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
         );
     }
 
-    // enableSearch = true active Google Search Grounding pour les recherches externes
-    public function chatAssistant(array $messages, string $context = ''): array
+    // enableSearch active Google Search Grounding (ajoute ~10-15s — désactivé par défaut)
+    public function chatAssistant(array $messages, string $context = '', bool $enableSearch = false): array
     {
+        $lastMessage = end($messages)['content'] ?? '';
+
+        $escaladeKeywords = ['avocat', 'tribunal', 'plainte', 'poursuite', 'juridique', 'media', 'scandale'];
+        $mentionsEscalade = false;
+        foreach ($escaladeKeywords as $kw) {
+            if (stripos($lastMessage, $kw) !== false) {
+                $mentionsEscalade = true;
+                break;
+            }
+        }
+
         $system = $this->systemPrompt();
+
         if ($context) {
             $system .= "\n\nContexte documentaire disponible :\n$context";
         }
 
-        $reply = $this->complete($messages, $system, enableSearch: true);
+        if ($mentionsEscalade) {
+            $system .= "\n\n[ESCALADE — Procédures La Poste]\n" .
+                "Signaux nécessitant escalade immédiate :\n" .
+                "- Avocat / tribunal / poursuite judiciaire → Escalade manager + service juridique\n" .
+                "- Délai >48h non résolu → Service réclamations N2\n" .
+                "- Montant >100€ → Service réclamations spécialisé\n" .
+                "- Insatisfaction persistante après 2 réponses → Manager\n" .
+                "- >2 mois sans résolution → Médiateur La Poste (obligatoire légalement)\n" .
+                "Contact médiateur : mediateur-laposte.fr\n" .
+                "Guide le conseiller clairement sur la procédure et propose une formulation adaptée pour le mail.";
+        }
+
+        $reply = $this->complete($messages, $system, enableSearch: $enableSearch);
 
         return [
-            'reply'   => $reply,
-            'sources' => [],
+            'reply'          => $reply,
+            'sources'        => [],
+            'escalade_alert' => $mentionsEscalade,
         ];
     }
 }

@@ -18,36 +18,63 @@ class AuthController extends Controller
 {
     public function login(Request $request): JsonResponse
     {
-        $request->validate([
+        $credentials = $request->validate([
             'email'    => 'required|email',
             'password' => 'required|string',
         ]);
 
-        if (!Auth::attempt($request->only('email', 'password'))) {
-            ActivityLogService::logWithoutAuth('login_failed', "Tentative de connexion échouée pour: {$request->email}");
+        \Log::info('Login attempt', ['email' => $credentials['email']]);
 
-            return ApiResponse::error(
-                ['email' => ['Identifiants incorrects.']],
-                'Authentification échouée',
-                401
-            );
+        $user = User::where('email', $credentials['email'])->first();
+
+        if (!$user) {
+            ActivityLogService::logWithoutAuth('login_failed', "Email inconnu: {$credentials['email']}");
+            return response()->json([
+                'success' => false,
+                'message' => 'Aucun compte trouvé avec cet email.',
+            ], 401);
         }
-
-        $user = Auth::user();
 
         if (!$user->is_active) {
-            Auth::logout();
-            return ApiResponse::forbidden('Votre compte est désactivé. Contactez un administrateur.');
+            return response()->json([
+                'success' => false,
+                'message' => 'Ce compte est désactivé. Contactez l\'administrateur.',
+            ], 403);
         }
 
-        $user->update(['last_login_at' => now()]);
-        $token = $user->createToken('api_token')->plainTextToken;
+        if (!\Illuminate\Support\Facades\Hash::check($credentials['password'], $user->password)) {
+            ActivityLogService::logWithoutAuth('login_failed', "Mot de passe incorrect pour: {$credentials['email']}");
+            return response()->json([
+                'success' => false,
+                'message' => 'Mot de passe incorrect.',
+            ], 401);
+        }
 
-        ActivityLogService::log('login', "Connexion de {$user->full_name}");
+        // Révoquer anciens tokens
+        $user->tokens()->delete();
+
+        $token = $user->createToken('auth_token')->plainTextToken;
+        $user->update(['last_login_at' => now()]);
+
+        ActivityLogService::logWithoutAuth('login', "Connexion de {$user->full_name} ({$credentials['email']})");
+
+        NotificationService::send(
+            $user->id,
+            'login',
+            'Nouvelle connexion',
+            'Connexion depuis ' . $request->ip()
+        );
+
+        $permissions = [];
+        try {
+            $permissions = $user->getAllPermissions()->pluck('name')->toArray();
+        } catch (\Exception $e) {}
 
         return ApiResponse::success([
-            'user'  => $user,
             'token' => $token,
+            'user'  => array_merge($user->fresh()->toArray(), [
+                'permissions' => $permissions,
+            ]),
         ], 'Connexion réussie');
     }
 

@@ -86,6 +86,41 @@ class GroqService
         throw new \RuntimeException('Réponse IA invalide — impossible d\'extraire le JSON. Raw: ' . substr($text, 0, 300));
     }
 
+    public function detectEscalationSignals(
+        string $emailContent,
+        string $serviceType,
+        ?string $previousStatus = null,
+        ?int $daysSinceFirstContact = null
+    ): array {
+        $truncated = substr(strip_tags($emailContent), 0, 1000);
+
+        $context = '';
+        if ($previousStatus)        $context .= "Statut précédent : $previousStatus. ";
+        if ($daysSinceFirstContact) $context .= "Jours depuis premier contact : $daysSinceFirstContact. ";
+
+        $prompt = "Analyse ce mail client La Poste et détecte les signaux d'escalade.\n" .
+            "{$context}Type de demande : {$serviceType}\n\n" .
+            "Règles : DÉLAI (>48h mail, >5j réclamation), INSATISFACTION (client insatisfait d'une réponse précédente), " .
+            "COMPLEXE (>100€, documents officiels, handicap, litige), MENACE (avocat/tribunal/plainte/médias), " .
+            "MEDIATEUR (recours épuisés, >2 mois).\n\n" .
+            "Retourne ce JSON :\n" .
+            "{\n" .
+            "  \"should_escalate\": true|false,\n" .
+            "  \"urgency_level\": \"immediate|high|normal|none\",\n" .
+            "  \"signals_detected\": [{\"type\": \"delai|insatisfaction|complexe|menace|mediateur\", \"description\": \"...\", \"quote\": \"...\"}],\n" .
+            "  \"recommended_target\": \"manager|service_reclamations|specialiste|mediateur|none\",\n" .
+            "  \"recommended_target_label\": \"...\",\n" .
+            "  \"suggested_message\": \"...\",\n" .
+            "  \"delay_days_exceeded\": null,\n" .
+            "  \"estimated_amount\": null,\n" .
+            "  \"legal_threat\": false,\n" .
+            "  \"explanation\": \"...\"\n" .
+            "}\n\n" .
+            "Mail : {$truncated}";
+
+        return $this->completeJson($prompt, "Détecteur signaux escalade La Poste. JSON uniquement.");
+    }
+
     public function analyzeEmail(string $emailContent): array
     {
         $prompt = "Analyse ce mail client de La Poste et retourne un JSON avec les champs suivants:\n" .

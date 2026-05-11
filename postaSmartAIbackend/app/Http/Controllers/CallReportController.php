@@ -63,6 +63,9 @@ class CallReportController extends Controller
             'client_name'        => $request->client_name,
             'client_email'       => $request->client_email,
             'client_phone'       => $request->client_phone,
+            'call_date'          => $request->call_date
+                                      ? \Carbon\Carbon::parse($request->call_date)
+                                      : now(),
             'demand_type'        => $request->demand_type,
             'call_summary'       => $request->call_summary,
             'commitments'        => $request->commitments,

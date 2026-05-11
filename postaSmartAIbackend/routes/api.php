@@ -44,6 +44,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/auth/profile', [AuthController::class, 'updateProfile']);
 
     // Dashboard
+    Route::get('/dashboard',       [DashboardController::class, 'index']);
     Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
 
     // Email History (module génération)
@@ -84,13 +85,22 @@ Route::middleware('auth:sanctum')->group(function () {
     // Boîte mail IMAP
     Route::prefix('emails')->group(function () {
         Route::get('/',                  [EmailInboxController::class, 'index']);
+        // routes statiques AVANT /{id} pour éviter la capture par le wildcard
+        Route::get('/stats',             [EmailInboxController::class, 'stats']);
+        Route::get('/counts',            [EmailInboxController::class, 'counts']);
+        Route::post('/sync',             [EmailInboxController::class, 'sync']);
         Route::get('/{id}',              [EmailInboxController::class, 'show']);
         Route::put('/{id}/read',         [EmailInboxController::class, 'markAsRead']);
         Route::post('/{id}/process',     [EmailInboxController::class, 'process']);
         Route::post('/{id}/analyze',     [EmailInboxController::class, 'analyzeAndRespond']);
-        Route::post('/{id}/validate',    [EmailInboxController::class, 'validateResponse']);
-        Route::post('/{id}/archive',     [EmailInboxController::class, 'archive']);
-        Route::post('/{id}/unarchive',   [EmailInboxController::class, 'unarchive']);
+        Route::post('/{id}/validate',       [EmailInboxController::class, 'validateResponse']);
+        Route::post('/{id}/send-to-client',[EmailInboxController::class, 'sendToClient']);
+        Route::post('/{id}/archive',       [EmailInboxController::class, 'archive']);
+        Route::post('/{id}/unarchive',     [EmailInboxController::class, 'unarchive']);
+        Route::post('/{id}/pending',       [EmailInboxController::class, 'markPending']);
+        Route::post('/{id}/partial',       [EmailInboxController::class, 'markPartial']);
+        Route::post('/{id}/escalate',      [EmailInboxController::class, 'escalate']);
+        Route::put('/{id}/priority',       [EmailInboxController::class, 'updatePriority']);
     });
 
     // Notifications
