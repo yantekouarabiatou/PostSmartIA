@@ -1,0 +1,10 @@
+[phases.setup]
+nixPkgs = ["php84", "php84Extensions.zip", "php84Extensions.pdo_mysql", "php84Extensions.redis", "php84Extensions.imap", "composer"]
+
+[phases.build]
+cmds = [
+  "composer install --optimize-autoloader --no-scripts --no-interaction"
+]
+
+[start]
+cmd = "php artisan config:cache && php artisan route:cache && /start-container.sh"
