@@ -9,6 +9,10 @@ import { format, formatDistanceToNow } from "date-fns"
 import { fr } from "date-fns/locale"
 import QualityScore from "@/components/ui/quality-score"
 import MailDiff from "@/components/ui/mail-diff"
+import AudioReader from "@/components/ui/audio-reader"
+import { StatusBadge, PriorityBadge } from "@/components/ui/status-badge"
+import { EmailStatus, EmailPriority, STATUS_CONFIG, ESCALATION_TARGETS } from "@/lib/email-status"
+import EscalationAlert, { type EscalationData } from "@/components/ui/escalation-alert"
 
 async function exportEmailToPdf(email: Parameters<Awaited<typeof import("@/lib/export-pdf")>["exportEmailToPdf"]>[0]) {
   const { exportEmailToPdf: fn } = await import("@/lib/export-pdf")
@@ -25,7 +29,8 @@ interface Email {
   body_text: string | null
   received_at: string
   is_read: boolean
-  status: "unread" | "read" | "processing" | "resolved" | "archived"
+  status: EmailStatus
+  priority: EmailPriority
   ai_service_type: string | null
   ai_response: string | null
   ai_quality_score_json: Record<string, number> | null
@@ -33,6 +38,12 @@ interface Email {
   validated_at: string | null
   archived_at: string | null
   source: "imap" | "form" | "manual"
+  internal_note: string | null
+  follow_up_at: string | null
+  escalated_to: string | null
+  resolved_points: string[] | null
+  open_points: string[] | null
+  is_follow_up_overdue: boolean
 }
 
 interface Analysis {
@@ -50,6 +61,7 @@ interface AiResult {
   email: Email
   analysis: Analysis
   response: { subject: string; body: string; quality_score: Record<string, number>; tone: string; warnings: string[] }
+  escalation?: EscalationData
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -75,13 +87,21 @@ const SERVICE_LABEL: Record<string, string> = {
 }
 
 const TABS = [
-  { key: "all",        label: "Tous" },
-  { key: "unread",     label: "Non lus" },
-  { key: "processing", label: "En cours" },
-  { key: "resolved",   label: "Résolus" },
-  { key: "archived",   label: "Archivés" },
-  { key: "form",       label: "Formulaires", isSource: true },
+  { key: "all",        label: "Tous",         countKey: "all" },
+  { key: "unread",     label: "Non lus",      countKey: "unread" },
+  { key: "processing", label: "En cours",     countKey: null },
+  { key: "pending",    label: "En attente",   countKey: "pending" },
+  { key: "partial",    label: "Partiels",     countKey: "partial" },
+  { key: "escalated",  label: "Escaladés",    countKey: "escalated" },
+  { key: "resolved",   label: "Résolus",      countKey: "resolved" },
+  { key: "archived",   label: "Archivés",     countKey: "archived" },
+  { key: "form",       label: "Formulaires",  countKey: null, isSource: true },
 ]
+
+interface StatusCounts {
+  all: number; unread: number; pending: number; partial: number
+  escalated: number; resolved: number; archived: number
+}
 
 function initials(name: string | null, email: string) {
   if (name) return name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase()
@@ -91,6 +111,177 @@ function initials(name: string | null, email: string) {
 function relativeDate(dt: string) {
   try { return formatDistanceToNow(new Date(dt), { addSuffix: true, locale: fr }) }
   catch { return dt }
+}
+
+// ── Stats types ───────────────────────────────────────────────────────────────
+
+interface EmailStats {
+  emails_today:    number
+  total_processed: number
+  avg_score:       number
+  avg_score_week:  number
+  score_count:     number
+  time_saved:      number
+  pending:         number
+  unread:          number
+}
+
+// ── StatsPanel ────────────────────────────────────────────────────────────────
+
+function StatsPanel({ stats, visible, onHide }: { stats: EmailStats | null; visible: boolean; onHide: () => void }) {
+  const [counters, setCounters] = useState({
+    emails_today:    0,
+    total_processed: 0,
+    avg_score:       0,
+    time_saved:      0,
+  })
+
+  useEffect(() => {
+    if (!visible || !stats) return
+    const steps    = 50
+    const interval = 1200 / steps
+    let step = 0
+    const timer = setInterval(() => {
+      step++
+      const p = step / steps
+      setCounters({
+        emails_today:    Math.round(stats.emails_today    * p),
+        total_processed: Math.round(stats.total_processed * p),
+        avg_score:       Math.round(stats.avg_score       * p),
+        time_saved:      Math.round(stats.time_saved      * p),
+      })
+      if (step >= steps) clearInterval(timer)
+    }, interval)
+    return () => clearInterval(timer)
+  }, [visible, stats])
+
+  if (!visible || !stats) return null
+
+  const scoreColor = (s: number) => s >= 75 ? "#059669" : s >= 50 ? "#D97706" : "#DC2626"
+  const scoreBg    = (s: number) => s >= 75 ? "#ECFDF5" : s >= 50 ? "#FFFBEB" : "#FEF2F2"
+
+  const cards = [
+    {
+      icon:     "📧",
+      label:    "Mails traités aujourd'hui",
+      value:    counters.emails_today,
+      unit:     "",
+      color:    "#0066CC",
+      bg:       "#EBF4FF",
+      sublabel: `${stats.pending} en attente`,
+    },
+    {
+      icon:     "✅",
+      label:    "Total traités",
+      value:    counters.total_processed,
+      unit:     "",
+      color:    "#059669",
+      bg:       "#ECFDF5",
+      sublabel: "Depuis le début",
+    },
+    {
+      icon:     "⭐",
+      label:    "Score qualité moyen",
+      value:    (stats?.score_count ?? 0) > 0 ? counters.avg_score : "—",
+      unit:     (stats?.score_count ?? 0) > 0 ? "/100" : "",
+      color:    stats && stats.avg_score >= 75 ? "#059669"
+              : stats && stats.avg_score >= 50 ? "#D97706"
+              : stats && stats.avg_score > 0   ? "#DC2626"
+              : "#9CA3AF",
+      bg:       stats && stats.avg_score >= 75 ? "#ECFDF5"
+              : stats && stats.avg_score >= 50 ? "#FFFBEB"
+              : stats && stats.avg_score > 0   ? "#FEF2F2"
+              : "#F9FAFB",
+      sublabel: (stats?.score_count ?? 0) > 0
+        ? `Sur ${stats!.score_count} mail(s) analysé(s)`
+        : "Générez un mail pour voir le score",
+    },
+    {
+      icon:     "⏱️",
+      label:    "Temps économisé",
+      value:    counters.time_saved,
+      unit:     " min",
+      color:    "#7C3AED",
+      bg:       "#F5F3FF",
+      sublabel: "Estimé (15 min/mail)",
+    },
+  ]
+
+  return (
+    <div style={{ margin: "0 16px 12px", animation: "slideUp 400ms ease" }}>
+      <style>{`
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(16px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 4, height: 20, background: "#FFCC00", borderRadius: 2 }} />
+          <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#00205B", fontFamily: "Inter, sans-serif" }}>
+            Vos statistiques en temps réel
+          </h3>
+        </div>
+        <button onClick={onHide} style={{ background: "none", border: "none", color: "#9CA3AF", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "0 4px" }}>
+          ×
+        </button>
+      </div>
+
+      {/* Cards grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+        {cards.map((card, i) => (
+          <div
+            key={i}
+            style={{
+              background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12,
+              padding: "14px 14px", borderTop: `3px solid ${card.color}`,
+              transition: "all 200ms",
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLDivElement).style.boxShadow = "0 4px 16px rgba(0,32,91,0.10)"
+              ;(e.currentTarget as HTMLDivElement).style.transform = "translateY(-2px)"
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLDivElement).style.boxShadow = "none"
+              ;(e.currentTarget as HTMLDivElement).style.transform = "translateY(0)"
+            }}
+          >
+            <div style={{
+              width: 34, height: 34, borderRadius: 9, background: card.bg,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 16, marginBottom: 10,
+            }}>
+              {card.icon}
+            </div>
+            <p style={{ margin: "0 0 2px", fontSize: 24, fontWeight: 700, color: card.color, fontFamily: "Inter, sans-serif", lineHeight: 1.1 }}>
+              {card.value}{card.unit}
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: 11.5, fontWeight: 500, color: "#00205B", fontFamily: "Inter, sans-serif" }}>
+              {card.label}
+            </p>
+            <p style={{ margin: "2px 0 0", fontSize: 11, color: "#9CA3AF", fontFamily: "Inter, sans-serif" }}>
+              {card.sublabel}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* Unread alert */}
+      {stats.unread > 0 && (
+        <div style={{
+          marginTop: 10, padding: "9px 14px",
+          background: "#FEF3C7", border: "1px solid #FDE68A",
+          borderRadius: 10, display: "flex", alignItems: "center", gap: 8,
+          fontSize: 13, color: "#92400E", fontFamily: "Inter, sans-serif",
+        }}>
+          <span>⚠️</span>
+          <span><strong>{stats.unread}</strong> mail(s) non lu(s) en attente de traitement</span>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function ScoreBar({ label, value }: { label: string; value: number }) {
@@ -122,10 +313,25 @@ export default function IncomingPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [editedSubject, setEditedSubject] = useState("")
   const [editedBody, setEditedBody] = useState("")
+  const [stats, setStats] = useState<EmailStats | null>(null)
+  const [statsVisible, setStatsVisible] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [lastSync, setLastSync] = useState<Date | null>(null)
   const [analysisOpen, setAnalysisOpen] = useState(true)
   const [showDiff, setShowDiff] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
+  const [counts, setCounts] = useState<StatusCounts | null>(null)
+  const [actionModal, setActionModal] = useState<"pending" | "partial" | "escalate" | null>(null)
+  const [pendingNote, setPendingNote] = useState("")
+  const [pendingDate, setPendingDate] = useState("")
+  const [partialResolved, setPartialResolved] = useState("")
+  const [partialOpen, setPartialOpen] = useState("")
+  const [partialNote, setPartialNote] = useState("")
+  const [escalateTarget, setEscalateTarget] = useState("supervisor")
+  const [escalateNote, setEscalateNote] = useState("")
+  const [actionLoading, setActionLoading] = useState(false)
+  const [escalationData, setEscalationData] = useState<EscalationData | null>(null)
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -151,11 +357,27 @@ export default function IncomingPage() {
     finally { setLoading(false) }
   }, [tab, search])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { load(); fetchCounts() }, [load])
+
+  // Polling sync toutes les 30s
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await api.post<{ count: number }>("/emails/sync", {})
+        setLastSync(new Date())
+        if (res.count > 0) {
+          load()
+          toast.success(`📬 ${res.count} nouveau(x) mail(s) reçu(s) !`, { duration: 5000 })
+        }
+      } catch {}
+    }, 30_000)
+    return () => clearInterval(interval)
+  }, [])
 
   async function selectEmail(email: Email) {
     setSelected(email)
     setAiResult(null)
+    setEscalationData(null)
     setEditedSubject("")
     setEditedBody("")
     if (isMobile) setShowDetail(true)
@@ -167,9 +389,116 @@ export default function IncomingPage() {
     }
   }
 
+  function toastApiError(e: any, fallback: string) {
+    const msg: string = e?.message ?? ""
+    if (msg.includes("Network") || msg.includes("fetch") || msg.includes("Failed"))
+      toast.error("🔌 Serveur inaccessible — Vérifiez que Laravel est démarré (php artisan serve)", { duration: 6000 })
+    else
+      toast.error(e?.data?.message ?? e?.message ?? fallback)
+  }
+
+  async function handleSendToClient() {
+    if (!selected) return
+    setSending(true)
+    try {
+      await api.post(`/emails/${selected.id}/send-to-client`, {
+        subject: editedSubject,
+        body:    editedBody,
+      })
+      toast.success("📤 Mail envoyé au client !")
+      setAiResult(null)
+      setSelected(prev => prev ? { ...prev, status: "resolved" } : null)
+      setEmails(prev => prev.map(e => e.id === selected.id ? { ...e, status: "resolved" } : e))
+      await fetchStats()
+      setStatsVisible(true)
+    } catch (e: any) { toastApiError(e, "Erreur lors de l'envoi") }
+    finally { setSending(false) }
+  }
+
+  async function fetchStats() {
+    try {
+      const data = await api.get<EmailStats>("/emails/stats")
+      setStats(data)
+    } catch {}
+  }
+
+  async function fetchCounts() {
+    try {
+      const data = await api.get<StatusCounts>("/emails/counts")
+      setCounts(data)
+    } catch {}
+  }
+
+  async function handleMarkPending() {
+    if (!selected) return
+    setActionLoading(true)
+    try {
+      const res = await api.post<Email>(`/emails/${selected.id}/pending`, {
+        internal_note: pendingNote || null,
+        follow_up_at:  pendingDate || null,
+      })
+      setSelected(res)
+      setEmails(prev => prev.map(e => e.id === res.id ? res : e))
+      setActionModal(null)
+      setPendingNote(""); setPendingDate("")
+      toast.success("⏳ Mail mis en attente.")
+      fetchCounts()
+    } catch (e: any) { toastApiError(e, "Erreur") }
+    finally { setActionLoading(false) }
+  }
+
+  async function handleMarkPartial() {
+    if (!selected) return
+    setActionLoading(true)
+    try {
+      const toList = (s: string) => s.split("\n").map(l => l.trim()).filter(Boolean)
+      const res = await api.post<Email>(`/emails/${selected.id}/partial`, {
+        resolved_points: toList(partialResolved),
+        open_points:     toList(partialOpen),
+        internal_note:   partialNote || null,
+      })
+      setSelected(res)
+      setEmails(prev => prev.map(e => e.id === res.id ? res : e))
+      setActionModal(null)
+      setPartialResolved(""); setPartialOpen(""); setPartialNote("")
+      toast.success("◑ Traitement partiel enregistré.")
+      fetchCounts()
+    } catch (e: any) { toastApiError(e, "Erreur") }
+    finally { setActionLoading(false) }
+  }
+
+  async function handleEscalate() {
+    if (!selected) return
+    setActionLoading(true)
+    try {
+      const res = await api.post<Email>(`/emails/${selected.id}/escalate`, {
+        escalated_to:  escalateTarget,
+        internal_note: escalateNote || null,
+      })
+      setSelected(res)
+      setEmails(prev => prev.map(e => e.id === res.id ? res : e))
+      setActionModal(null)
+      setEscalateTarget("supervisor"); setEscalateNote("")
+      toast.success("⬆ Mail escaladé.")
+      fetchCounts()
+    } catch (e: any) { toastApiError(e, "Erreur") }
+    finally { setActionLoading(false) }
+  }
+
+  async function handleUpdatePriority(priority: EmailPriority) {
+    if (!selected) return
+    try {
+      const res = await api.put<Email>(`/emails/${selected.id}/priority`, { priority })
+      setSelected(res)
+      setEmails(prev => prev.map(e => e.id === res.id ? res : e))
+      toast.success("Priorité mise à jour.")
+    } catch (e: any) { toastApiError(e, "Erreur") }
+  }
+
   async function handleAnalyze() {
     if (!selected) return
     setAnalyzing(true)
+    setEscalationData(null)
     try {
       const res = await api.post<AiResult>(`/emails/${selected.id}/analyze`, {})
       setAiResult(res)
@@ -177,8 +506,16 @@ export default function IncomingPage() {
       setEditedBody(res.response.body ?? "")
       setSelected(res.email)
       setEmails(prev => prev.map(e => e.id === res.email.id ? res.email : e))
-      toast.success("Analyse et réponse générées !")
-    } catch (e: any) { toast.error(e.message ?? "Erreur lors de l'analyse") }
+      if (res.escalation?.should_escalate) {
+        setEscalationData(res.escalation)
+        const urgLabel = res.escalation.urgency_level === "immediate" ? "🚨 Escalade immédiate requise !" : "⚠️ Escalade recommandée"
+        toast(urgLabel, { icon: res.escalation.legal_threat ? "⚖️" : "⚠️", duration: 6000 })
+      } else {
+        toast.success("Analyse et réponse générées !")
+      }
+      await fetchStats()
+      setStatsVisible(true)
+    } catch (e: any) { toastApiError(e, "Erreur lors de l'analyse") }
     finally { setAnalyzing(false) }
   }
 
@@ -191,13 +528,15 @@ export default function IncomingPage() {
       setSelected(res)
       setEmails(prev => prev.map(e => e.id === res.id ? res : e))
       if (action === "validate") {
-        toast.success("Réponse validée ! Mail résolu.")
+        toast.success("✅ Réponse validée — mail marqué comme résolu.")
         setAiResult(null)
+        await fetchStats()
+        setStatsVisible(true)
       } else {
-        toast("Réponse rejetée.", { icon: "⚠️" })
+        toast("Réponse rejetée — mail remis en attente.", { icon: "⚠️" })
         setAiResult(null)
       }
-    } catch (e: any) { toast.error(e.message ?? "Erreur") }
+    } catch (e: any) { toastApiError(e, "Erreur lors de la validation") }
   }
 
   async function handleArchive(id: number, unarchive = false) {
@@ -231,19 +570,40 @@ export default function IncomingPage() {
               }}>{unreadCount}</span>
             )}
           </div>
-          <button onClick={load} style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280", padding: 4 }}>
-            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#9CA3AF" }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#059669", display: "inline-block", animation: "pulse 2s infinite" }} />
+              {lastSync ? `Sync ${lastSync.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` : "Auto 30s"}
+            </div>
+            <button onClick={load} style={{ background: "none", border: "none", cursor: "pointer", color: "#6B7280", padding: 4 }}>
+              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+            </button>
+          </div>
+          <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} } @keyframes spin { to{transform:rotate(360deg)} }`}</style>
         </div>
         {/* Tabs */}
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{
-              fontSize: 12, padding: "4px 10px", borderRadius: 20, border: "none", cursor: "pointer",
-              background: tab === t.key ? "#00205B" : "#F0F4FF",
-              color: tab === t.key ? "#fff" : "#0066CC", fontWeight: 500,
-            }}>{t.label}</button>
-          ))}
+          {TABS.map(t => {
+            const cnt = t.countKey && counts ? (counts as any)[t.countKey] as number : null
+            const active = tab === t.key
+            return (
+              <button key={t.key} onClick={() => setTab(t.key)} style={{
+                fontSize: 12, padding: "4px 10px", borderRadius: 20, border: "none", cursor: "pointer",
+                background: active ? "#00205B" : "#F0F4FF",
+                color: active ? "#fff" : "#0066CC", fontWeight: 500,
+                display: "flex", alignItems: "center", gap: 4,
+              }}>
+                {t.label}
+                {cnt != null && cnt > 0 && (
+                  <span style={{
+                    background: active ? "rgba(255,255,255,0.25)" : "#0066CC",
+                    color: active ? "#fff" : "#fff",
+                    borderRadius: 10, fontSize: 10, padding: "0 5px", fontWeight: 700,
+                  }}>{cnt}</span>
+                )}
+              </button>
+            )
+          })}
         </div>
         {/* Search */}
         <div style={{ marginTop: 8, position: "relative" }}>
@@ -304,17 +664,24 @@ export default function IncomingPage() {
                   <div style={{ fontSize: 11, color: "#9CA3AF", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", marginTop: 2 }}>
                     {email.body_text?.slice(0, 120)}
                   </div>
-                  <div style={{ marginTop: 5, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  <div style={{ marginTop: 5, display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
                     {email.ai_service_type && (
                       <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 20, background: svcColor + "20", color: svcColor, fontWeight: 600 }}>
                         {SERVICE_LABEL[email.ai_service_type] ?? email.ai_service_type}
                       </span>
                     )}
+                    <StatusBadge status={email.status} size="sm" />
+                    {email.priority && email.priority !== "normal" && (
+                      <PriorityBadge priority={email.priority} size="sm" />
+                    )}
+                    {email.is_follow_up_overdue && (
+                      <span style={{ fontSize: 10, color: "#DC2626", fontWeight: 700 }}>⚠ Suivi en retard</span>
+                    )}
                   </div>
                 </div>
               </div>
               {isUnread && (
-                <div style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", width: 8, height: 8, borderRadius: "50%", background: "#0066CC" }} />
+                <div style={{ position: "absolute", right: 10, top: 10, width: 8, height: 8, borderRadius: "50%", background: "#0066CC" }} />
               )}
             </div>
           )
@@ -332,7 +699,7 @@ export default function IncomingPage() {
         </button>
       )}
 
-      {/* Statuses */}
+      {/* Status banners */}
       {selected.status === "resolved" && (
         <div style={{ background: "#D1FAE5", borderBottom: "1px solid #A7F3D0", padding: "10px 20px", display: "flex", alignItems: "center", gap: 8 }}>
           <Check size={16} color="#059669" />
@@ -348,11 +715,46 @@ export default function IncomingPage() {
           <button onClick={() => handleArchive(selected.id, true)} style={{ fontSize: 12, color: "#0066CC", background: "none", border: "none", cursor: "pointer" }}>Désarchiver</button>
         </div>
       )}
+      {selected.status === "pending" && (
+        <div style={{ background: "#FEF3C7", borderBottom: "1px solid #FDE68A", padding: "10px 20px", display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, color: "#92400E", fontWeight: 600 }}>
+            ⏳ En attente
+            {selected.follow_up_at && ` · Relance prévue le ${format(new Date(selected.follow_up_at), "dd/MM/yyyy HH:mm", { locale: fr })}`}
+            {selected.is_follow_up_overdue && <span style={{ color: "#DC2626", marginLeft: 8 }}>⚠ Délai dépassé</span>}
+          </span>
+        </div>
+      )}
+      {selected.status === "partial" && (
+        <div style={{ background: "#E0F2FE", borderBottom: "1px solid #7DD3FC", padding: "10px 20px" }}>
+          <span style={{ fontSize: 13, color: "#1e3a5f", fontWeight: 600 }}>◑ Traitement partiel</span>
+          {selected.open_points && selected.open_points.length > 0 && (
+            <div style={{ marginTop: 4, fontSize: 12, color: "#374151" }}>
+              Points ouverts : {selected.open_points.join(" · ")}
+            </div>
+          )}
+        </div>
+      )}
+      {selected.status === "escalated" && (
+        <div style={{ background: "#FFEDD5", borderBottom: "1px solid #FDBA74", padding: "10px 20px" }}>
+          <span style={{ fontSize: 13, color: "#9a3412", fontWeight: 600 }}>
+            ⬆ Escaladé → {ESCALATION_TARGETS.find(t => t.value === selected.escalated_to)?.label ?? selected.escalated_to}
+          </span>
+          {selected.internal_note && (
+            <div style={{ marginTop: 2, fontSize: 12, color: "#7c2d12" }}>{selected.internal_note}</div>
+          )}
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ background: "#fff", padding: "20px 24px", borderBottom: "1px solid #E5E7EB" }}>
-        <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700, color: "#00205B" }}>{selected.subject}</h2>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#00205B", flex: 1 }}>{selected.subject}</h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+            <StatusBadge status={selected.status} />
+            {selected.priority && <PriorityBadge priority={selected.priority} />}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8, alignItems: "center" }}>
           {selected.ai_service_type && (
             <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: (SERVICE_COLOR[selected.ai_service_type] ?? "#6B7280") + "20", color: SERVICE_COLOR[selected.ai_service_type] ?? "#6B7280", fontWeight: 600 }}>
               {SERVICE_LABEL[selected.ai_service_type] ?? selected.ai_service_type}
@@ -365,9 +767,26 @@ export default function IncomingPage() {
             {format(new Date(selected.received_at), "dd MMMM yyyy à HH:mm", { locale: fr })}
           </span>
         </div>
-        <div style={{ fontSize: 13, color: "#374151" }}>
-          <strong>De :</strong> {selected.from_name ?? ""} &lt;{selected.from_email}&gt;
-          &nbsp;&nbsp;<strong>À :</strong> postsmartia@gmail.com
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ fontSize: 13, color: "#374151" }}>
+            <strong>De :</strong> {selected.from_name ?? ""} &lt;{selected.from_email}&gt;
+            &nbsp;&nbsp;<strong>À :</strong> postsmartia@gmail.com
+          </div>
+          {/* Priority quick-change */}
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ fontSize: 11, color: "#9CA3AF" }}>Priorité :</span>
+            {(["low","normal","high","urgent"] as EmailPriority[]).map(p => (
+              <button key={p} onClick={() => handleUpdatePriority(p)} style={{
+                fontSize: 10, padding: "2px 7px", borderRadius: 10, border: "1px solid #E5E7EB",
+                cursor: "pointer", fontWeight: 600,
+                background: selected.priority === p ? "#00205B" : "#F3F4F6",
+                color: selected.priority === p ? "#fff" : "#374151",
+              }}>
+                {p === "low" ? "↓" : p === "normal" ? "→" : p === "high" ? "↑" : "‼"}{" "}
+                {p === "low" ? "Faible" : p === "normal" ? "Normal" : p === "high" ? "Haute" : "Urgent"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -391,13 +810,49 @@ export default function IncomingPage() {
         </div>
       )}
 
+      {/* Alerte escalade automatique */}
+      {escalationData && (
+        <div style={{ margin: "0 16px 4px" }}>
+          <EscalationAlert
+            escalation={escalationData}
+            emailId={selected.id}
+            onEscalated={() => {
+              setEscalationData(null)
+              setAiResult(null)
+              load()
+              fetchCounts()
+              fetchStats()
+            }}
+          />
+        </div>
+      )}
+
       {/* AI response panel */}
       {(aiResult || selected.ai_response) && !analyzing && selected.status !== "resolved" && (
         <div style={{ margin: "0 16px 12px", borderRadius: 12, padding: 20, background: "#F8FAFF", border: "1px solid #C7D9F5" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#FFCC00", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#00205B" }}>IA</div>
-            <span style={{ fontWeight: 700, fontSize: 14, color: "#00205B" }}>Réponse générée par PostSmart IA</span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#FFCC00", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#00205B" }}>IA</div>
+              <span style={{ fontWeight: 700, fontSize: 14, color: "#00205B" }}>Réponse générée par PostSmart IA</span>
+            </div>
+            <StatusBadge status={selected.status} size="sm" />
           </div>
+
+          {/* Avertissement : pas encore résolu */}
+          {aiResult && (
+            <div style={{
+              padding: "10px 14px", background: "#FFFBEB",
+              border: "1px solid #FDE68A", borderRadius: 10,
+              marginBottom: 14, fontSize: 13, color: "#92400E",
+              display: "flex", alignItems: "flex-start", gap: 8,
+            }}>
+              <span style={{ flexShrink: 0 }}>⚠️</span>
+              <span>
+                Ce mail ne sera marqué comme <strong>résolu</strong> qu'après avoir cliqué sur{" "}
+                <strong>"Valider et envoyer"</strong> ou <strong>"Valider sans envoyer"</strong>.
+              </span>
+            </div>
+          )}
 
           {/* Quality scores */}
           {(aiResult?.response.quality_score || selected.ai_quality_score_json) && (
@@ -452,6 +907,11 @@ export default function IncomingPage() {
             }} />
           </div>
 
+          {/* Audio reader — lecture de la réponse IA */}
+          {editedBody && (
+            <AudioReader text={editedBody} autoPlay={!!aiResult} />
+          )}
+
           {/* Diff toggle */}
           {aiResult && (
             <div style={{ marginBottom: 8 }}>
@@ -475,25 +935,39 @@ export default function IncomingPage() {
           )}
 
           {/* Validation buttons */}
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => handleValidate("validate")} style={{
-              flex: 1, padding: "10px 16px", borderRadius: 8, border: "none", cursor: "pointer",
-              background: "#059669", color: "#fff", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={() => handleSendToClient()} disabled={sending} style={{
+              flex: 1, minWidth: 180, padding: "10px 16px", borderRadius: 8, border: "none",
+              cursor: sending ? "wait" : "pointer",
+              background: "#059669", color: "#fff", fontWeight: 600, fontSize: 13,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              opacity: sending ? 0.7 : 1,
             }}>
-              <Check size={15} /> Valider et marquer comme résolu
+              {sending ? <><div style={{ width: 13, height: 13, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.65s linear infinite" }} /> Envoi…</> : <><span>📤</span> Valider et envoyer au client</>}
+            </button>
+            <button onClick={() => handleValidate("validate")} style={{
+              padding: "10px 14px", borderRadius: 8, border: "1px solid #059669", cursor: "pointer",
+              background: "#F0FDF4", color: "#059669", fontWeight: 600, fontSize: 13,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            }}>
+              <Check size={14} /> Valider sans envoyer
             </button>
             <button onClick={() => handleValidate("reject")} style={{
-              padding: "10px 16px", borderRadius: 8, border: "1px solid #DC2626", cursor: "pointer",
-              background: "#FEF2F2", color: "#DC2626", fontWeight: 600, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+              padding: "10px 14px", borderRadius: 8, border: "1px solid #DC2626", cursor: "pointer",
+              background: "#FEF2F2", color: "#DC2626", fontWeight: 600, fontSize: 13,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             }}>
-              <X size={15} /> Rejeter
+              <X size={14} /> Rejeter
             </button>
           </div>
         </div>
       )}
 
+      {/* Stats panel — visible uniquement après analyse ou validation */}
+      <StatsPanel stats={stats} visible={statsVisible} onHide={() => setStatsVisible(false)} />
+
       {/* Actions bar */}
-      <div style={{ background: "#fff", borderTop: "1px solid #E5E7EB", padding: "12px 20px", display: "flex", gap: 10, flexWrap: "wrap", position: "sticky", bottom: 0 }}>
+      <div style={{ background: "#fff", borderTop: "1px solid #E5E7EB", padding: "12px 20px", display: "flex", gap: 8, flexWrap: "wrap", position: "sticky", bottom: 0 }}>
         {selected.status !== "resolved" && selected.status !== "archived" && (
           <button onClick={handleAnalyze} disabled={analyzing} style={{
             padding: "9px 18px", borderRadius: 8, border: "none", cursor: analyzing ? "wait" : "pointer",
@@ -501,12 +975,33 @@ export default function IncomingPage() {
             display: "flex", alignItems: "center", gap: 6, opacity: analyzing ? 0.7 : 1,
           }}>
             <Sparkles size={15} />
-            {analyzing ? "Analyse en cours…" : "✨ Analyser & Générer une réponse"}
+            {analyzing ? "Analyse en cours…" : "✨ Analyser & Générer"}
           </button>
+        )}
+        {!["resolved","archived","escalated"].includes(selected.status) && (
+          <button onClick={() => setActionModal("pending")} style={{
+            padding: "9px 14px", borderRadius: 8, border: "1px solid #FCD34D", cursor: "pointer",
+            background: "#FFFBEB", color: "#92400E", fontWeight: 500, fontSize: 13,
+            display: "flex", alignItems: "center", gap: 5,
+          }}>⏳ En attente</button>
+        )}
+        {!["resolved","archived","escalated"].includes(selected.status) && (
+          <button onClick={() => setActionModal("partial")} style={{
+            padding: "9px 14px", borderRadius: 8, border: "1px solid #7DD3FC", cursor: "pointer",
+            background: "#E0F2FE", color: "#1e3a5f", fontWeight: 500, fontSize: 13,
+            display: "flex", alignItems: "center", gap: 5,
+          }}>◑ Partiel</button>
+        )}
+        {!["resolved","archived","escalated"].includes(selected.status) && (
+          <button onClick={() => setActionModal("escalate")} style={{
+            padding: "9px 14px", borderRadius: 8, border: "1px solid #FDBA74", cursor: "pointer",
+            background: "#FFEDD5", color: "#9a3412", fontWeight: 500, fontSize: 13,
+            display: "flex", alignItems: "center", gap: 5,
+          }}>⬆ Escalader</button>
         )}
         {selected.status !== "archived" && (
           <button onClick={() => handleArchive(selected.id)} style={{
-            padding: "9px 16px", borderRadius: 8, border: "1px solid #D1D5DB", cursor: "pointer",
+            padding: "9px 14px", borderRadius: 8, border: "1px solid #D1D5DB", cursor: "pointer",
             background: "#fff", color: "#374151", fontWeight: 500, fontSize: 13,
             display: "flex", alignItems: "center", gap: 6,
           }}>
@@ -514,23 +1009,20 @@ export default function IncomingPage() {
           </button>
         )}
         {(selected.status === "resolved" || selected.status === "archived") && (
-          <button
-            onClick={() => exportEmailToPdf(selected)}
-            style={{
-              padding: "9px 16px", borderRadius: 8, border: "1px solid #7C3AED", cursor: "pointer",
-              background: "#fff", color: "#7C3AED", fontWeight: 500, fontSize: 13,
-              display: "flex", alignItems: "center", gap: 6,
-            }}
-          >
+          <button onClick={() => exportEmailToPdf(selected)} style={{
+            padding: "9px 14px", borderRadius: 8, border: "1px solid #7C3AED", cursor: "pointer",
+            background: "#fff", color: "#7C3AED", fontWeight: 500, fontSize: 13,
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
             📄 Exporter PDF
           </button>
         )}
         <button onClick={load} style={{
-          padding: "9px 14px", borderRadius: 8, border: "1px solid #0066CC", cursor: "pointer",
+          padding: "9px 12px", borderRadius: 8, border: "1px solid #0066CC", cursor: "pointer",
           background: "#fff", color: "#0066CC", fontWeight: 500, fontSize: 13,
           display: "flex", alignItems: "center", gap: 6,
         }}>
-          <RotateCcw size={14} /> Actualiser
+          <RotateCcw size={14} />
         </button>
       </div>
     </div>
@@ -543,6 +1035,22 @@ export default function IncomingPage() {
     </div>
   )
 
+  const modalStyle: React.CSSProperties = {
+    position: "fixed", inset: 0, zIndex: 1000,
+    background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center",
+  }
+  const cardStyle: React.CSSProperties = {
+    background: "#fff", borderRadius: 16, padding: "28px 28px 24px",
+    width: "100%", maxWidth: 480, boxShadow: "0 20px 60px rgba(0,32,91,0.18)",
+    fontFamily: "Inter, sans-serif",
+  }
+  const labelStyle: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: "#374151", display: "block", marginBottom: 6 }
+  const inputStyle: React.CSSProperties = {
+    width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #D1D5DB",
+    fontSize: 13, boxSizing: "border-box", marginBottom: 14, fontFamily: "inherit",
+  }
+  const taStyle: React.CSSProperties = { ...inputStyle, resize: "vertical" }
+
   return (
     <>
       <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
@@ -550,6 +1058,100 @@ export default function IncomingPage() {
         {(!isMobile || !showDetail) && listPanel}
         {(!isMobile || showDetail) && detailPanel}
       </div>
+
+      {/* Modal — En attente */}
+      {actionModal === "pending" && (
+        <div style={modalStyle} onClick={() => setActionModal(null)}>
+          <div style={cardStyle} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 20px", fontSize: 17, fontWeight: 700, color: "#00205B" }}>⏳ Mettre en attente</h3>
+            <label style={labelStyle}>Note interne (optionnel)</label>
+            <textarea
+              value={pendingNote} onChange={e => setPendingNote(e.target.value)}
+              placeholder="Ex : En attente d'un document du client…"
+              rows={3} style={taStyle}
+            />
+            <label style={labelStyle}>Date de relance (optionnel)</label>
+            <input
+              type="datetime-local" value={pendingDate} onChange={e => setPendingDate(e.target.value)}
+              style={inputStyle}
+            />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setActionModal(null)} style={{
+                padding: "9px 18px", borderRadius: 8, border: "1px solid #D1D5DB", cursor: "pointer",
+                background: "#fff", color: "#374151", fontSize: 13,
+              }}>Annuler</button>
+              <button onClick={handleMarkPending} disabled={actionLoading} style={{
+                padding: "9px 20px", borderRadius: 8, border: "none", cursor: "pointer",
+                background: "#D97706", color: "#fff", fontWeight: 600, fontSize: 13, opacity: actionLoading ? 0.7 : 1,
+              }}>{actionLoading ? "…" : "Confirmer"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Traitement partiel */}
+      {actionModal === "partial" && (
+        <div style={modalStyle} onClick={() => setActionModal(null)}>
+          <div style={cardStyle} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 20px", fontSize: 17, fontWeight: 700, color: "#00205B" }}>◑ Traitement partiel</h3>
+            <label style={labelStyle}>Points traités (un par ligne)</label>
+            <textarea
+              value={partialResolved} onChange={e => setPartialResolved(e.target.value)}
+              placeholder="Ex :\nRemboursement effectué\nLivraison reprogrammée"
+              rows={3} style={taStyle}
+            />
+            <label style={labelStyle}>Points ouverts (un par ligne)</label>
+            <textarea
+              value={partialOpen} onChange={e => setPartialOpen(e.target.value)}
+              placeholder="Ex :\nAvoir en attente\nContestation en cours"
+              rows={3} style={taStyle}
+            />
+            <label style={labelStyle}>Note interne (optionnel)</label>
+            <textarea value={partialNote} onChange={e => setPartialNote(e.target.value)} rows={2} style={taStyle} />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setActionModal(null)} style={{
+                padding: "9px 18px", borderRadius: 8, border: "1px solid #D1D5DB", cursor: "pointer",
+                background: "#fff", color: "#374151", fontSize: 13,
+              }}>Annuler</button>
+              <button onClick={handleMarkPartial} disabled={actionLoading} style={{
+                padding: "9px 20px", borderRadius: 8, border: "none", cursor: "pointer",
+                background: "#0369A1", color: "#fff", fontWeight: 600, fontSize: 13, opacity: actionLoading ? 0.7 : 1,
+              }}>{actionLoading ? "…" : "Enregistrer"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal — Escalader */}
+      {actionModal === "escalate" && (
+        <div style={modalStyle} onClick={() => setActionModal(null)}>
+          <div style={cardStyle} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 20px", fontSize: 17, fontWeight: 700, color: "#00205B" }}>⬆ Escalader le mail</h3>
+            <label style={labelStyle}>Escalader vers</label>
+            <select value={escalateTarget} onChange={e => setEscalateTarget(e.target.value)} style={{ ...inputStyle, appearance: "none" }}>
+              {ESCALATION_TARGETS.map(t => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+            <label style={labelStyle}>Contexte / Note interne (optionnel)</label>
+            <textarea
+              value={escalateNote} onChange={e => setEscalateNote(e.target.value)}
+              placeholder="Ex : Client insistant, situation bloquée depuis 5 jours…"
+              rows={3} style={taStyle}
+            />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setActionModal(null)} style={{
+                padding: "9px 18px", borderRadius: 8, border: "1px solid #D1D5DB", cursor: "pointer",
+                background: "#fff", color: "#374151", fontSize: 13,
+              }}>Annuler</button>
+              <button onClick={handleEscalate} disabled={actionLoading} style={{
+                padding: "9px 20px", borderRadius: 8, border: "none", cursor: "pointer",
+                background: "#EA580C", color: "#fff", fontWeight: 600, fontSize: 13, opacity: actionLoading ? 0.7 : 1,
+              }}>{actionLoading ? "…" : "Escalader"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { api, type GeneratedEmail } from "@/lib/api"
 import VoiceRecorder from "@/components/voice-recorder"
+import AudioReader from "@/components/ui/audio-reader"
 import AppSelect, { type SelectOption } from "@/components/ui/app-select"
 import QualityScore from "@/components/ui/quality-score"
 async function exportCallReportToPdf(payload: any) {
@@ -69,6 +70,7 @@ export default function CallReportPage() {
   const [clientName, setClientName]     = useState("")
   const [clientEmail, setClientEmail]   = useState("")
   const [clientPhone, setClientPhone]   = useState("")
+  const [callDate, setCallDate]         = useState(() => new Date().toISOString().slice(0, 16))
   const [requestType, setRequestType]   = useState("")
   const [callSummary, setCallSummary]   = useState("")
   const [commitments, setCommitments]   = useState("")
@@ -101,6 +103,7 @@ export default function CallReportPage() {
         client_name:   clientName,
         client_email:  clientEmail || null,
         client_phone:  clientPhone || null,
+        call_date:     callDate,
         demand_type:   requestType,
         call_summary:  callSummary,
         commitments:   commitments || null,
@@ -127,6 +130,7 @@ export default function CallReportPage() {
         client_name:        clientName,
         client_email:       clientEmail || null,
         client_phone:       clientPhone || null,
+        call_date:          callDate,
         demand_type:        requestType,
         call_summary:       callSummary,
         commitments:        commitments || null,
@@ -228,6 +232,20 @@ export default function CallReportPage() {
                     onChange={e => setClientPhone(e.target.value)}
                   />
                 </div>
+              </div>
+
+              {/* Date et heure de l'appel */}
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-muted-foreground">
+                  📅 Date et heure de l&apos;appel <span className="text-destructive">*</span>
+                </label>
+                <Input
+                  type="datetime-local"
+                  value={callDate}
+                  onChange={e => setCallDate(e.target.value)}
+                  max={new Date().toISOString().slice(0, 16)}
+                />
+                <p className="text-xs text-muted-foreground">Par défaut : maintenant. Modifiez si l&apos;appel a eu lieu plus tôt.</p>
               </div>
 
               {/* Type de demande */}
@@ -414,6 +432,11 @@ export default function CallReportPage() {
                       className="min-h-[280px] resize-none text-sm font-mono leading-relaxed"
                     />
                   </div>
+
+                  {/* Lecture audio du mail généré */}
+                  {editedBody && (
+                    <AudioReader text={editedBody} autoPlay={true} />
+                  )}
 
                   {/* Boutons d'action */}
                   <div className="grid grid-cols-2 gap-2">

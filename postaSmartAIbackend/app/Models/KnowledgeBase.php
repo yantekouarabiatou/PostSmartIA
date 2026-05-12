@@ -9,10 +9,15 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class KnowledgeBase extends Model
 {
-    /** @use HasFactory<\Database\Factories\KnowledgeBaseFactory> */
     use HasFactory, SoftDeletes;
 
     protected $table = 'knowledge_base_items';
+
+    /**
+     * Types disponibles.
+     * 'charte' → règles relationnelles La Poste, injectées automatiquement dans les prompts IA.
+     */
+    public const TYPES = ['procedure', 'offre', 'cgv', 'reglementation', 'charte'];
 
     protected $fillable = [
         'title',
@@ -28,66 +33,49 @@ class KnowledgeBase extends Model
     protected function casts(): array
     {
         return [
-            'tags' => 'json',
-            'is_active' => 'boolean',
+            'tags'       => 'json',
+            'is_active'  => 'boolean',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
             'deleted_at' => 'datetime',
         ];
     }
 
-    /**
-     * Get the user who created this knowledge base item
-     */
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
     }
 
-    /**
-     * Scope to get only active items
-     */
     public function scopeActive($query)
     {
         return $query->where('is_active', true);
     }
 
-    /**
-     * Scope to filter by type
-     */
-    public function scopeByType($query, $type)
+    public function scopeByType($query, string $type)
     {
         return $query->where('type', $type);
     }
 
-    /**
-     * Scope to search by title or description
-     */
-    public function scopeSearch($query, $search)
+    public function scopeSearch($query, string $search)
     {
         return $query->where('title', 'like', "%{$search}%")
                      ->orWhere('description', 'like', "%{$search}%");
     }
 
-    /**
-     * Scope to filter by tags
-     */
-    public function scopeByTag($query, $tag)
+    public function scopeByTag($query, string $tag)
     {
         return $query->where('tags', 'like', "%{$tag}%");
     }
 
-    /**
-     * Get type label
-     */
     public function getTypeLabelAttribute(): string
     {
-        return match($this->type) {
-            'procedure' => 'Procédure',
-            'offre' => 'Offre',
-            'cgv' => 'CGV',
+        return match ($this->type) {
+            'procedure'      => 'Procédure',
+            'offre'          => 'Offre',
+            'cgv'            => 'CGV',
             'reglementation' => 'Réglementation',
-            default => $this->type,
+            'charte'         => 'Charte relationnelle',
+            default          => $this->type,
         };
     }
 }

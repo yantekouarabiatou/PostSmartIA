@@ -8,21 +8,22 @@ import {
   WifiOff, ServerCrash, X, UserX,
 } from "lucide-react"
 import { api } from "@/lib/api"
+import { LanguageProvider, LangSwitcher, useI18n } from "@/lib/i18n"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type RoleId = "conseiller" | "manager" | "admin"
 
-const ROLES: { id: RoleId; label: string; emoji: string; desc: string }[] = [
-  { id: "conseiller", label: "Conseiller",    emoji: "👤", desc: "Accès standard" },
-  { id: "manager",    label: "Manager",       emoji: "👥", desc: "Accès équipe"   },
-  { id: "admin",      label: "Admin",         emoji: "🔐", desc: "Accès complet"  },
-]
+const ROLE_EMOJIS: Record<RoleId, string> = {
+  conseiller: "👤",
+  manager:    "👥",
+  admin:      "🔐",
+}
 
 const DEMOS: Record<RoleId, { email: string; password: string }> = {
   conseiller: { email: "jean.martin@laposte.fr", password: "Conseiller@2024!" },
   manager:    { email: "manager@laposte.fr",      password: "Manager@2024!"    },
-  admin:      { email: "admin@laposte.fr",         password: "Admin@2024!"      },
+  admin:      { email: "admin@postsmartia.fr",    password: "Admin@2026!"      },
 }
 
 type ErrorInfo = {
@@ -30,15 +31,12 @@ type ErrorInfo = {
   type: "auth" | "server" | "network" | "account"
 }
 
-function getFriendlyError(raw: string): ErrorInfo {
+function getErrorType(raw: string): ErrorInfo["type"] {
   const l = raw.toLowerCase()
-  if (l.includes("database") || l.includes("500") || l.includes("server error"))
-    return { title: "Service temporairement indisponible", detail: "Nos serveurs rencontrent un problème technique. Réessayez dans quelques instants.", type: "server" }
-  if (l.includes("failed to fetch") || l.includes("network") || l.includes("fetch"))
-    return { title: "Connexion impossible", detail: "Impossible de joindre le serveur. Vérifiez votre connexion internet.", type: "network" }
-  if (l.includes("désactivé") || l.includes("403"))
-    return { title: "Compte désactivé", detail: "Votre compte a été désactivé. Contactez votre administrateur.", type: "account" }
-  return { title: "Identifiants incorrects", detail: "L'e-mail ou le mot de passe est incorrect. Vérifiez vos informations.", type: "auth" }
+  if (l.includes("database") || l.includes("500") || l.includes("server error")) return "server"
+  if (l.includes("failed to fetch") || l.includes("network") || l.includes("fetch")) return "network"
+  if (l.includes("désactivé") || l.includes("403")) return "account"
+  return "auth"
 }
 
 const ERR_ICONS: Record<ErrorInfo["type"], React.ReactNode> = {
@@ -599,10 +597,20 @@ const CSS = `
   }
 `
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ── Inner page ────────────────────────────────────────────────────────────────
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter()
+  const { t }  = useI18n()
+  const tl     = t.login
+
+  const ROLES = (["conseiller", "manager", "admin"] as RoleId[]).map(id => ({
+    id,
+    emoji: ROLE_EMOJIS[id],
+    label: tl.roles[id].label,
+    desc:  tl.roles[id].desc,
+  }))
+
   const [role, setRole]             = useState<RoleId>("conseiller")
   const [email, setEmail]           = useState(DEMOS.conseiller.email)
   const [password, setPassword]     = useState(DEMOS.conseiller.password)
@@ -634,7 +642,14 @@ export default function LoginPage() {
       if (rememberMe) localStorage.setItem("remember_me", "true")
       router.push("/dashboard")
     } catch (err: any) {
-      const info = getFriendlyError(err.message ?? "")
+      const type = getErrorType(err.message ?? "")
+      const errorMessages: Record<ErrorInfo["type"], { title: string; detail: string }> = {
+        server:  { title: tl.errors.server,  detail: "Nos serveurs rencontrent un problème technique. Réessayez dans quelques instants." },
+        network: { title: tl.errors.network, detail: "Impossible de joindre le serveur. Vérifiez votre connexion internet." },
+        account: { title: tl.errors.account, detail: "Votre compte a été désactivé. Contactez votre administrateur." },
+        auth:    { title: tl.errors.auth,    detail: "L'e-mail ou le mot de passe est incorrect. Vérifiez vos informations." },
+      }
+      const info = { type, ...errorMessages[type] }
       setError(info)
       if (info.type === "auth") {
         setShake(true)
@@ -733,7 +748,7 @@ export default function LoginPage() {
         {/* ══════════════ RIGHT PANEL ══════════════ */}
         <div className="lp-right">
 
-          {/* Mobile logo */}
+          {/* Mobile logo + lang switcher */}
           <div className="lp-mob-logo">
             <div className="lp-logo-badge">
               <Mail size={17} color="#00205B" strokeWidth={2.5} />
@@ -742,6 +757,11 @@ export default function LoginPage() {
               <span style={{ color: "#00205B" }}>Post</span>
               <span style={{ color: "#0066CC" }}>Smart IA</span>
             </div>
+          </div>
+
+          {/* Lang switcher (desktop) */}
+          <div style={{ position: "absolute", top: 20, right: 24, zIndex: 10 }}>
+            <LangSwitcher dark />
           </div>
 
           <div className="lp-card">
@@ -783,13 +803,13 @@ export default function LoginPage() {
 
               {/* Email */}
               <div className="lp-field">
-                <label className="lp-label">Adresse e-mail</label>
+                <label className="lp-label">{tl.emailLabel}</label>
                 <div className="lp-wrap">
                   <span className="lp-ico"><Mail size={15} /></span>
                   <input
                     type="email"
                     className={`lp-inp${shake ? " lp-shake" : ""}`}
-                    placeholder="prenom.nom@laposte.fr"
+                    placeholder={tl.emailPlaceholder}
                     value={email}
                     onChange={e => { setEmail(e.target.value); setError(null) }}
                     required autoComplete="email"
@@ -799,7 +819,7 @@ export default function LoginPage() {
 
               {/* Password */}
               <div className="lp-field">
-                <label className="lp-label">Mot de passe</label>
+                <label className="lp-label">{tl.passwordLabel}</label>
                 <div className="lp-wrap">
                   <span className="lp-ico"><Lock size={15} /></span>
                   <input
@@ -825,7 +845,7 @@ export default function LoginPage() {
                       {rememberMe && <Check size={10} color="#fff" strokeWidth={3} />}
                     </span>
                   </span>
-                  <span className="lp-remember-lbl">Se souvenir de moi</span>
+                  <span className="lp-remember-lbl">{tl.rememberMe}</span>
                 </label>
                 <button type="button" className="lp-forgot">Mot de passe oublié ?</button>
               </div>
@@ -833,8 +853,8 @@ export default function LoginPage() {
               {/* Submit */}
               <button type="submit" className="lp-btn" disabled={loading}>
                 {loading
-                  ? <><div className="lp-spin" /> Connexion en cours…</>
-                  : <>Se connecter <ArrowRight size={16} /></>
+                  ? <><div className="lp-spin" /> {tl.submitting}</>
+                  : <>{tl.submit} <ArrowRight size={16} /></>
                 }
               </button>
             </form>
@@ -858,5 +878,15 @@ export default function LoginPage() {
 
       </div>
     </>
+  )
+}
+
+// ── Page wrapper ──────────────────────────────────────────────────────────────
+
+export default function LoginPage() {
+  return (
+    <LanguageProvider>
+      <LoginContent />
+    </LanguageProvider>
   )
 }

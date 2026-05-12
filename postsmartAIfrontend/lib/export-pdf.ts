@@ -74,120 +74,218 @@ function addFooters(doc: jsPDF) {
 }
 
 export async function exportEmailToPdf(email: EmailRecord): Promise<void> {
-  if (typeof window === 'undefined') return
-  const { default: jsPDF } = await import('jspdf')
-  const doc    = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
-  const pageW  = doc.internal.pageSize.getWidth()
-  const margin = 20
-  const contentW = pageW - margin * 2
-  let y = 50
+  if (typeof window === "undefined") return
+  const { default: jsPDF } = await import("jspdf")
+  const doc   = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+  const pageW = doc.internal.pageSize.getWidth()
+  const pageH = doc.internal.pageSize.getHeight()
+  const mg    = 18
+  const inner = pageW - mg * 2
+  let y = 0
 
-  addHeader(doc, "Compte-rendu de traitement mail")
-
-  // Info section
-  doc.setTextColor(0, 32, 91)
-  doc.setFontSize(13)
-  doc.setFont("helvetica", "bold")
-  doc.text("Informations du mail", margin, y)
-  y += 7
-  doc.setDrawColor(0, 102, 204)
-  doc.setLineWidth(0.4)
-  doc.line(margin, y, pageW - margin, y)
-  y += 7
-
-  const infoRows: [string, string][] = [
-    ["Expéditeur", `${email.from_name ?? ""} <${email.from_email}>`],
-    ["Objet",      email.subject],
-    ["Date reçu",  new Date(email.received_at).toLocaleString("fr-FR")],
-    ["Type",       email.ai_service_type ?? "Non classifié"],
-    ["Statut",     email.status],
+  // ── helpers ───────────────────────────────────────────────────────────────
+  const rgb = (hex: string): [number, number, number] => [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
   ]
+  const setFont = (size: number, style: "normal" | "bold" = "normal", color = "#374151") => {
+    doc.setFontSize(size)
+    doc.setFont("helvetica", style)
+    doc.setTextColor(...rgb(color))
+  }
+  const checkPage = (needed = 20) => {
+    if (y + needed > pageH - 18) {
+      renderFooter()
+      doc.addPage()
+      y = 18
+      renderPageHeader()
+    }
+  }
 
-  doc.setFontSize(10)
-  infoRows.forEach(([label, value]) => {
-    doc.setFont("helvetica", "bold")
-    doc.setTextColor(0, 32, 91)
-    doc.text(label + " :", margin, y)
-    doc.setFont("helvetica", "normal")
-    doc.setTextColor(75, 85, 99)
-    const lines = doc.splitTextToSize(value || "-", contentW - 40)
-    doc.text(lines, margin + 40, y)
-    y += 7 * lines.length
-  })
+  // ── footer ────────────────────────────────────────────────────────────────
+  const renderFooter = () => {
+    doc.setFillColor(0, 32, 91)
+    doc.rect(0, pageH - 12, pageW, 12, "F")
+    doc.setFillColor(255, 204, 0)
+    doc.rect(0, pageH - 12, 4, 12, "F")
+    setFont(7.5, "normal", "#94a3b8")
+    doc.text("PostSmart IA — Document confidentiel — La Poste © 2026", 10, pageH - 4.5)
+    setFont(7.5, "bold", "#ffffff")
+    const cur = (doc.internal as any).getCurrentPageInfo().pageNumber
+    doc.text(`Page ${cur}`, pageW - mg, pageH - 4.5, { align: "right" })
+  }
 
-  y += 6
+  // ── continuation header ───────────────────────────────────────────────────
+  const renderPageHeader = () => {
+    doc.setFillColor(0, 32, 91)
+    doc.rect(0, 0, pageW, 10, "F")
+    doc.setFillColor(255, 204, 0)
+    doc.rect(0, 0, 4, 10, "F")
+    setFont(7, "bold", "#ffcc00")
+    doc.text("PostSmart IA", 8, 7)
+    setFont(7, "normal", "#94a3b8")
+    doc.text("Compte-rendu de traitement mail", pageW - mg, 7, { align: "right" })
+    y = 18
+  }
 
-  // Original body
+  // ── main header ───────────────────────────────────────────────────────────
+  doc.setFillColor(0, 32, 91)
+  doc.rect(0, 0, pageW, 44, "F")
+  doc.setFillColor(255, 204, 0)
+  doc.rect(0, 0, 4, 44, "F")
+
+  setFont(20, "bold", "#ffcc00")
+  doc.text("PostSmart IA", 11, 17)
+  setFont(9, "normal", "#ffffff")
+  doc.text("Assistant IA — Service Client La Poste", 11, 25)
+
+  setFont(8, "normal", "#94a3b8")
+  doc.text(
+    `Généré le ${new Date().toLocaleDateString("fr-FR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}`,
+    pageW - mg, 17, { align: "right" }
+  )
+
+  doc.setFillColor(255, 204, 0)
+  doc.rect(mg, 31, inner, 0.5, "F")
+  setFont(11, "bold", "#ffffff")
+  doc.text("COMPTE-RENDU DE TRAITEMENT MAIL", mg, 39)
+  y = 54
+
+  // ── status band ───────────────────────────────────────────────────────────
+  const statusColors: Record<string, [number, number, number]> = {
+    resolved:   [5, 150, 105],
+    archived:   [107, 114, 128],
+    processing: [217, 119, 6],
+    unread:     [0, 102, 204],
+    read:       [107, 114, 128],
+  }
+  const statusLabels: Record<string, string> = {
+    resolved: "RÉSOLU ✓", archived: "ARCHIVÉ", processing: "EN COURS", unread: "NON LU", read: "LU",
+  }
+  doc.setFillColor(...(statusColors[email.status] ?? [0, 102, 204]))
+  doc.roundedRect(mg, y, inner, 10, 2, 2, "F")
+  setFont(9, "bold", "#ffffff")
+  doc.text(statusLabels[email.status] ?? email.status.toUpperCase(), pageW / 2, y + 6.5, { align: "center" })
+  y += 16
+
+  // ── section helper ────────────────────────────────────────────────────────
+  const addSection = (title: string) => {
+    checkPage(22)
+    y += 4
+    doc.setFillColor(0, 32, 91)
+    doc.rect(mg, y, 3, 8, "F")
+    setFont(11, "bold", "#00205B")
+    doc.text(title, mg + 6, y + 6)
+    y += 12
+    doc.setDrawColor(229, 231, 235)
+    doc.setLineWidth(0.3)
+    doc.line(mg, y, pageW - mg, y)
+    y += 5
+  }
+
+  const addRow = (label: string, value: string, highlight = false) => {
+    checkPage(10)
+    if (highlight) {
+      doc.setFillColor(235, 244, 255)
+      doc.rect(mg, y - 4, inner, 9, "F")
+    }
+    setFont(9, "bold", "#4b5563")
+    doc.text(label + " :", mg + 2, y)
+    setFont(9, "normal", "#1a1a2e")
+    const lines = doc.splitTextToSize(String(value || "-"), inner - 45)
+    doc.text(lines, mg + 42, y)
+    y += lines.length * 5.5 + 1
+  }
+
+  // ── expediteur ────────────────────────────────────────────────────────────
+  addSection("Informations de l'expéditeur")
+  addRow("Expéditeur", `${email.from_name ?? ""} <${email.from_email}>`, true)
+  addRow("Objet", email.subject)
+  addRow("Date reçu", new Date(email.received_at).toLocaleString("fr-FR"))
+  addRow("Type détecté", email.ai_service_type ?? "Non classifié", true)
+  addRow("Source", email.status === "form" ? "Formulaire Web" : "Email entrant")
+
+  // ── mail original ─────────────────────────────────────────────────────────
   if (email.body_text) {
-    doc.setTextColor(0, 32, 91)
-    doc.setFontSize(12)
-    doc.setFont("helvetica", "bold")
-    doc.text("Mail original du client", margin, y)
-    y += 7
+    addSection("Contenu du mail client")
+    checkPage(30)
+    const bodyLines = doc.splitTextToSize(email.body_text, inner - 10)
+    const bodyH = bodyLines.length * 5 + 12
     doc.setFillColor(248, 250, 255)
-    const lines = doc.splitTextToSize(email.body_text, contentW - 8)
-    const h = lines.length * 5 + 10
-    doc.rect(margin, y - 4, contentW, h, "F")
-    doc.setFont("helvetica", "normal")
-    doc.setFontSize(9)
-    doc.setTextColor(55, 65, 81)
-    doc.text(lines, margin + 4, y + 2)
-    y += h + 8
+    doc.setDrawColor(199, 217, 245)
+    doc.setLineWidth(0.4)
+    doc.roundedRect(mg, y, inner, bodyH, 3, 3, "FD")
+    setFont(9, "normal", "#374151")
+    doc.text(bodyLines, mg + 5, y + 7)
+    y += bodyH + 8
   }
 
-  // Validated response
-  if (email.validated_response) {
-    if (y > 220) { doc.addPage(); y = 20 }
-    doc.setTextColor(0, 32, 91)
-    doc.setFontSize(12)
-    doc.setFont("helvetica", "bold")
-    doc.text("Réponse validée par le conseiller", margin, y)
-    y += 7
-    doc.setFillColor(240, 255, 244)
-    doc.setDrawColor(5, 150, 105)
-    const lines = doc.splitTextToSize(email.validated_response, contentW - 8)
-    const h = lines.length * 5 + 10
-    doc.rect(margin, y - 4, contentW, h, "FD")
-    doc.setFont("helvetica", "normal")
-    doc.setFontSize(9)
-    doc.setTextColor(55, 65, 81)
-    doc.text(lines, margin + 4, y + 2)
-    y += h + 8
-  }
-
-  // Quality scores
+  // ── scores qualité ────────────────────────────────────────────────────────
   if (email.ai_quality_score_json) {
-    if (y > 220) { doc.addPage(); y = 20 }
-    doc.setTextColor(0, 32, 91)
-    doc.setFontSize(12)
-    doc.setFont("helvetica", "bold")
-    doc.text("Score de qualité IA", margin, y)
-    y += 10
-
-    const scoreItems: { label: string; key: string; color: [number, number, number] }[] = [
-      { label: "Clarté",     key: "clarity",    color: [0, 102, 204]  },
-      { label: "Empathie",   key: "empathy",    color: [8, 145, 178]  },
-      { label: "Conformité", key: "compliance", color: [5, 150, 105]  },
-      { label: "Global",     key: "overall",    color: [0, 32, 91]    },
+    addSection("Score de qualité IA")
+    const scoreItems = [
+      { label: "Clarté",     key: "clarity"    },
+      { label: "Empathie",   key: "empathy"    },
+      { label: "Conformité", key: "compliance" },
+      { label: "Global",     key: "overall"    },
     ]
-
-    scoreItems.forEach(({ label, key, color }) => {
-      const value = email.ai_quality_score_json?.[key] ?? 0
-      if (!value) return
-      doc.setFontSize(9)
-      doc.setFont("helvetica", "normal")
-      doc.setTextColor(75, 85, 99)
-      doc.text(label, margin, y)
-      doc.text(`${value}/100`, pageW - margin, y, { align: "right" })
+    scoreItems.forEach(({ label, key }) => {
+      const val = email.ai_quality_score_json?.[key] ?? 0
+      if (!val) return
+      checkPage(10)
+      setFont(8.5, "normal", "#6b7280")
+      doc.text(label, mg + 2, y)
       doc.setFillColor(229, 231, 235)
-      doc.rect(margin + 30, y - 3, contentW - 42, 4, "F")
-      doc.setFillColor(...color)
-      doc.rect(margin + 30, y - 3, (contentW - 42) * value / 100, 4, "F")
-      y += 9
+      doc.roundedRect(mg + 30, y - 3.5, inner - 50, 5, 1.5, 1.5, "F")
+      const barColor: [number, number, number] = val >= 75 ? [5, 150, 105] : val >= 50 ? [217, 119, 6] : [220, 38, 38]
+      doc.setFillColor(...barColor)
+      doc.roundedRect(mg + 30, y - 3.5, (inner - 50) * val / 100, 5, 1.5, 1.5, "F")
+      setFont(8.5, "bold", val >= 75 ? "#059669" : val >= 50 ? "#d97706" : "#dc2626")
+      doc.text(`${val}/100`, pageW - mg, y, { align: "right" })
+      y += 8
     })
+    y += 3
   }
 
-  addFooters(doc)
+  // ── réponse validée ───────────────────────────────────────────────────────
+  if (email.validated_response) {
+    addSection("Réponse validée par le conseiller")
+    checkPage(30)
+    const respLines = doc.splitTextToSize(email.validated_response, inner - 10)
+    const respH = respLines.length * 5 + 16
+    doc.setFillColor(236, 253, 245)
+    doc.setDrawColor(167, 243, 208)
+    doc.setLineWidth(0.4)
+    doc.roundedRect(mg, y, inner, respH, 3, 3, "FD")
+    doc.setFillColor(5, 150, 105)
+    doc.roundedRect(mg + 2, y + 2, 22, 6, 1.5, 1.5, "F")
+    setFont(7, "bold", "#ffffff")
+    doc.text("VALIDÉ", mg + 5.5, y + 6.5)
+    setFont(9, "normal", "#374151")
+    doc.text(respLines, mg + 5, y + 12)
+    y += respH + 6
+
+    if (email.validated_at) {
+      checkPage(12)
+      doc.setFillColor(243, 244, 246)
+      doc.rect(mg, y, inner, 10, "F")
+      setFont(8, "normal", "#6b7280")
+      doc.text(
+        `Validé le ${new Date(email.validated_at).toLocaleString("fr-FR")}`,
+        mg + 4, y + 6.5
+      )
+      y += 14
+    }
+  }
+
+  // ── apply footers on all pages ────────────────────────────────────────────
+  const total = (doc.internal as any).getNumberOfPages()
+  for (let i = 1; i <= total; i++) {
+    doc.setPage(i)
+    renderFooter()
+  }
+
   doc.save(`PostSmartIA_Mail_${email.id}_${new Date().toISOString().split("T")[0]}.pdf`)
 }
 

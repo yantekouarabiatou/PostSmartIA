@@ -5,12 +5,11 @@ namespace App\Http\Controllers;
 use App\Http\Resources\ApiResponse;
 use App\Mail\ClientResponseMail;
 use App\Models\EmailInbox;
+use App\Models\EscalationHistory;
 use App\Services\ActivityLogService;
-use App\Services\GeminiService;
-use App\Services\GroqService;
 use App\Services\HistoryService;
-use App\Services\MailboxService;
 use App\Services\NotificationService;
+use App\Traits\HasAiFallback;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -18,15 +17,9 @@ use Illuminate\Support\Facades\Mail;
 
 class EmailInboxController extends Controller
 {
-    private function aiCall(callable $fn): mixed
-    {
-        try {
-            return $fn(app(GeminiService::class));
-        } catch (\Exception $e) {
-            Log::warning('Gemini unavailable, falling back to Groq: ' . $e->getMessage());
-            return $fn(app(GroqService::class));
-        }
-    }
+    use HasAiFallback;
+
+    // ─── Listing & lecture ───────────────────────────────────────────────────
 
     public function index(Request $request): JsonResponse
     {
@@ -83,6 +76,8 @@ class EmailInboxController extends Controller
         return ApiResponse::success($email, 'Mail marqué comme lu');
     }
 
+    // ─── Analyse IA ──────────────────────────────────────────────────────────
+
     public function analyzeAndRespond(Request $request, int $id): JsonResponse
     {
         $email = EmailInbox::find($id);
@@ -90,22 +85,16 @@ class EmailInboxController extends Controller
 
         try {
             $content  = $email->body_text ?: strip_tags($email->body_html ?? '');
-            $analysis = $this->aiCall(fn($ai) => $ai->analyzeEmail($content));
-            $response = $this->aiCall(fn($ai) => $ai->generateEmailResponse($content, $analysis['service_type'] ?? 'autre'));
+            $analysis = $this->withAiFallback(fn($ai) => $ai->analyzeEmail($content));
+            $response = $this->withAiFallback(fn($ai) => $ai->generateEmailResponse($content, $analysis['service_type'] ?? 'autre'));
 
             $qualityScore = $response['quality_score'] ?? null;
-
-            Log::info('Quality score received', [
-                'email_id'      => $email->id,
-                'score'         => $qualityScore,
-                'response_keys' => array_keys($response),
-            ]);
 
             // Détection automatique des signaux d'escalade
             $daysSinceFirst = $email->created_at ? (int) now()->diffInDays($email->created_at) : null;
             $escalation     = [];
             try {
-                $escalation = $this->aiCall(fn($ai) => $ai->detectEscalationSignals(
+                $escalation = $this->withAiFallback(fn($ai) => $ai->detectEscalationSignals(
                     $content,
                     $analysis['service_type'] ?? 'autre',
                     $email->status,
@@ -131,14 +120,14 @@ class EmailInboxController extends Controller
                 NotificationService::sendToRole(
                     'manager',
                     'legal_threat',
-                    '⚖️ Menace légale détectée',
+                    'Menace légale détectée',
                     "Mail de {$email->from_name} — " . ($escalation['explanation'] ?? 'Vérification requise')
                 );
             } elseif (($escalation['urgency_level'] ?? '') === 'immediate') {
                 NotificationService::sendToRole(
                     'manager',
                     'escalation_needed',
-                    '🚨 Escalade requise immédiatement',
+                    'Escalade requise immédiatement',
                     "Mail de {$email->from_name} — " . ($escalation['explanation'] ?? '')
                 );
             }
@@ -154,14 +143,14 @@ class EmailInboxController extends Controller
             }
 
             $email->update([
-                'is_processed'         => true,
-                'processed_at'         => now(),
-                'status'               => 'processing',
-                'ai_service_type'      => $analysis['service_type'] ?? null,
-                'ai_response'          => $response['body'] ?? null,
-                'ai_quality_score_json'=> $qualityScore,          // JSON column (cast array)
-                'ai_quality_score'     => $overallScore,           // INTEGER column (overall seulement)
-                'priority'             => $priority,
+                'is_processed'          => true,
+                'processed_at'          => now(),
+                'status'                => 'processing',
+                'ai_service_type'       => $analysis['service_type'] ?? null,
+                'ai_response'           => $response['body'] ?? null,
+                'ai_quality_score_json' => $qualityScore,
+                'ai_quality_score'      => $overallScore,
+                'priority'              => $priority,
             ]);
 
             ActivityLogService::log('mail_processed', "Mail analysé : {$email->subject}", EmailInbox::class, $id);
@@ -178,11 +167,13 @@ class EmailInboxController extends Controller
         }
     }
 
-    // Keep legacy route alias
+    // Alias de compatibilité avec l'ancienne route /process
     public function process(Request $request, int $id): JsonResponse
     {
         return $this->analyzeAndRespond($request, $id);
     }
+
+    // ─── Validation & envoi ──────────────────────────────────────────────────
 
     public function validateResponse(Request $request, int $id): JsonResponse
     {
@@ -206,24 +197,6 @@ class EmailInboxController extends Controller
 
         $email->update(['ai_response' => null, 'ai_quality_score_json' => null, 'status' => 'read']);
         return ApiResponse::success($email->fresh(), 'Réponse rejetée.');
-    }
-
-    public function archive(int $id): JsonResponse
-    {
-        $email = EmailInbox::find($id);
-        if (!$email) return ApiResponse::notFound('Mail introuvable');
-
-        $email->update(['status' => 'archived', 'archived_at' => now()]);
-        return ApiResponse::success(null, 'Mail archivé.');
-    }
-
-    public function unarchive(int $id): JsonResponse
-    {
-        $email = EmailInbox::find($id);
-        if (!$email) return ApiResponse::notFound('Mail introuvable');
-
-        $email->update(['status' => 'resolved', 'archived_at' => null]);
-        return ApiResponse::success(null, 'Mail désarchivé.');
     }
 
     public function sendToClient(Request $request, int $id): JsonResponse
@@ -260,46 +233,29 @@ class EmailInboxController extends Controller
                 "Réponse envoyée à {$email->from_email} avec succès."
             );
 
-            return ApiResponse::success(
-                $email->fresh(),
-                "Mail envoyé à {$email->from_email} avec succès !"
-            );
+            return ApiResponse::success($email->fresh(), "Mail envoyé à {$email->from_email} avec succès !");
         } catch (\Exception $e) {
             Log::error('Mail send error: ' . $e->getMessage());
             return ApiResponse::error(null, 'Erreur envoi : ' . $e->getMessage(), 500);
         }
     }
 
-    public function sync(): JsonResponse
+    // ─── Statuts ─────────────────────────────────────────────────────────────
+
+    public function archive(int $id): JsonResponse
     {
-        try {
-            $mailbox = app(MailboxService::class);
-            $emails  = $mailbox->fetchUnreadEmails();
-            $count   = 0;
-            foreach ($emails as $emailData) {
-                $mailbox->syncEmailToDatabase($emailData);
-                $count++;
-            }
-            return ApiResponse::success(['count' => $count], "{$count} mail(s) synchronisé(s)");
-        } catch (\Exception $e) {
-            Log::warning('Email sync error: ' . $e->getMessage());
-            return ApiResponse::success(['count' => 0], 'Synchronisation ignorée');
-        }
+        $email = EmailInbox::find($id);
+        if (!$email) return ApiResponse::notFound('Mail introuvable');
+        $email->update(['status' => 'archived', 'archived_at' => now()]);
+        return ApiResponse::success(null, 'Mail archivé.');
     }
 
-    public function counts(): JsonResponse
+    public function unarchive(int $id): JsonResponse
     {
-        $base = EmailInbox::whereNull('archived_at');
-
-        return ApiResponse::success([
-            'all'       => (clone $base)->count(),
-            'unread'    => (clone $base)->where('status', 'unread')->count(),
-            'pending'   => (clone $base)->where('status', 'pending')->count(),
-            'partial'   => (clone $base)->where('status', 'partial')->count(),
-            'escalated' => (clone $base)->where('status', 'escalated')->count(),
-            'resolved'  => EmailInbox::where('status', 'resolved')->count(),
-            'archived'  => EmailInbox::where('status', 'archived')->count(),
-        ], 'Compteurs statuts');
+        $email = EmailInbox::find($id);
+        if (!$email) return ApiResponse::notFound('Mail introuvable');
+        $email->update(['status' => 'resolved', 'archived_at' => null]);
+        return ApiResponse::success(null, 'Mail désarchivé.');
     }
 
     public function markPending(Request $request, int $id): JsonResponse
@@ -342,44 +298,144 @@ class EmailInboxController extends Controller
         return ApiResponse::success($email->fresh(), 'Traitement partiel enregistré.');
     }
 
+    // ─── Escalade ────────────────────────────────────────────────────────────
+
     public function escalate(Request $request, int $id): JsonResponse
     {
         $request->validate([
-            'escalated_to'  => 'required|string',
-            'internal_note' => 'nullable|string',
+            'escalated_to'         => 'required|string',              // rôle : 'manager', 'specialiste'…
+            'escalated_to_user_id' => 'nullable|integer|exists:users,id', // utilisateur spécifique (optionnel)
+            'internal_note'        => 'nullable|string',
+            'urgency_level'        => 'nullable|in:immediate,high,normal',
+            'signals_detected'     => 'nullable|array',
         ]);
 
         $email = EmailInbox::find($id);
         if (!$email) return ApiResponse::notFound('Mail introuvable');
 
         $email->update([
-            'status'        => 'escalated',
-            'escalated_to'  => $request->escalated_to,
-            'internal_note' => $request->internal_note,
+            'status'               => 'escalated',
+            'escalated_to'         => $request->escalated_to,
+            'escalated_to_user_id' => $request->escalated_to_user_id,
+            'internal_note'        => $request->internal_note,
         ]);
 
+        // Audit trail — enregistrement dans l'historique d'escalades
+        $history = EscalationHistory::create([
+            'email_id'             => $email->id,
+            'escalated_by'         => auth()->id(),
+            'escalated_to_user_id' => $request->escalated_to_user_id,
+            'escalated_to_role'    => $request->escalated_to,
+            'reason'               => $request->internal_note,
+            'urgency_level'        => $request->urgency_level ?? 'normal',
+            'signals_detected'     => $request->signals_detected,
+        ]);
+
+        // Notification du rôle destinataire
         NotificationService::sendToRole(
             $request->escalated_to,
             'email_escalated',
             'Mail escaladé',
-            "Un mail de {$email->from_name} vous a été escaladé : {$email->subject}"
+            "Un mail de {$email->from_name} vous a été escaladé : {$email->subject}",
+            ['escalation_id' => $history->id, 'email_id' => $email->id]
         );
 
-        return ApiResponse::success($email->fresh(), 'Mail escaladé.');
+        // Notification individuelle si utilisateur spécifique désigné
+        if ($request->escalated_to_user_id) {
+            NotificationService::send(
+                $request->escalated_to_user_id,
+                'email_escalated_direct',
+                'Mail escaladé — assignation directe',
+                "Le mail « {$email->subject} » de {$email->from_name} vous est assigné.",
+                ['escalation_id' => $history->id, 'email_id' => $email->id]
+            );
+        }
+
+        return ApiResponse::success([
+            'email'      => $email->fresh(),
+            'escalation' => $history,
+        ], 'Mail escaladé.');
     }
+
+    /**
+     * Accusé de réception d'une escalade.
+     * La personne désignée confirme qu'elle prend en charge le dossier.
+     */
+    public function acknowledgeEscalation(Request $request, int $id): JsonResponse
+    {
+        // $id = email_id ici (la route est /emails/{id}/escalate/acknowledge)
+        $escalation = EscalationHistory::where('email_id', $id)
+            ->whereNull('acknowledged_at')
+            ->latest()
+            ->first();
+
+        if (!$escalation) {
+            return ApiResponse::error(null, 'Aucune escalade en attente pour ce mail.', 404);
+        }
+
+        $escalation->update([
+            'acknowledged_at' => now(),
+            'acknowledged_by' => auth()->id(),
+        ]);
+
+        // Notifier le conseiller qui a escaladé
+        NotificationService::send(
+            $escalation->escalated_by,
+            'escalation_acknowledged',
+            'Escalade prise en charge',
+            "L'escalade du mail « {$escalation->email?->subject} » a été acquittée par " . auth()->user()->name . '.'
+        );
+
+        return ApiResponse::success($escalation->fresh(), 'Escalade acquittée.');
+    }
+
+    // ─── Priorité ────────────────────────────────────────────────────────────
 
     public function updatePriority(Request $request, int $id): JsonResponse
     {
-        $request->validate([
-            'priority' => 'required|in:low,normal,high,urgent',
-        ]);
+        $request->validate(['priority' => 'required|in:low,normal,high,urgent']);
 
         $email = EmailInbox::find($id);
         if (!$email) return ApiResponse::notFound('Mail introuvable');
 
         $email->update(['priority' => $request->priority]);
-
         return ApiResponse::success($email->fresh(), 'Priorité mise à jour.');
+    }
+
+    // ─── Sync IMAP ───────────────────────────────────────────────────────────
+
+    public function sync(): JsonResponse
+    {
+        try {
+            $mailbox = app(\App\Services\MailboxService::class);
+            $emails  = $mailbox->fetchUnreadEmails();
+            $count   = 0;
+            foreach ($emails as $emailData) {
+                $mailbox->syncEmailToDatabase($emailData);
+                $count++;
+            }
+            return ApiResponse::success(['count' => $count], "{$count} mail(s) synchronisé(s)");
+        } catch (\Exception $e) {
+            Log::warning('Email sync error: ' . $e->getMessage());
+            return ApiResponse::success(['count' => 0], 'Synchronisation ignorée');
+        }
+    }
+
+    // ─── Stats & compteurs ───────────────────────────────────────────────────
+
+    public function counts(): JsonResponse
+    {
+        $base = EmailInbox::whereNull('archived_at');
+
+        return ApiResponse::success([
+            'all'       => (clone $base)->count(),
+            'unread'    => (clone $base)->where('status', 'unread')->count(),
+            'pending'   => (clone $base)->where('status', 'pending')->count(),
+            'partial'   => (clone $base)->where('status', 'partial')->count(),
+            'escalated' => (clone $base)->where('status', 'escalated')->count(),
+            'resolved'  => EmailInbox::where('status', 'resolved')->count(),
+            'archived'  => EmailInbox::where('status', 'archived')->count(),
+        ], 'Compteurs statuts');
     }
 
     public function stats(): JsonResponse
@@ -395,12 +451,11 @@ class EmailInboxController extends Controller
             ->whereIn('status', ['resolved', 'archived'])
             ->count();
 
-        // ai_quality_score_json est casté en array par le modèle — on lit directement le JSON complet
         $allWithScore = EmailInbox::whereNotNull('ai_quality_score_json')->get();
 
         $scores = $allWithScore->map(function ($email) {
             try {
-                $score = $email->ai_quality_score_json; // déjà array (cast model)
+                $score = $email->ai_quality_score_json;
                 if (!is_array($score)) return null;
 
                 $overall = $score['overall']
@@ -433,32 +488,17 @@ class EmailInboxController extends Controller
                 }
             })->filter()->values();
 
-        $avgScoreWeek = $weekScores->count() > 0
-            ? (int) round($weekScores->average())
-            : $avgScore;
-
-        $scoreCount = $scores->count();
-
-        Log::info('Stats calculated', [
-            'avg_score'   => $avgScore,
-            'score_count' => $scoreCount,
-            'user_id'     => $userId,
-        ]);
-
-        $timeSaved = $totalProcessed * 15;
-
-        $pending = EmailInbox::whereNotIn('status', ['resolved', 'archived'])->count();
-        $unread  = EmailInbox::where('is_read', false)->count();
+        $avgScoreWeek = $weekScores->count() > 0 ? (int) round($weekScores->average()) : $avgScore;
 
         return ApiResponse::success([
             'emails_today'    => $emailsToday,
             'total_processed' => $totalProcessed,
             'avg_score'       => $avgScore,
             'avg_score_week'  => $avgScoreWeek,
-            'score_count'     => $scoreCount,
-            'time_saved'      => $timeSaved,
-            'pending'         => $pending,
-            'unread'          => $unread,
+            'score_count'     => $scores->count(),
+            'time_saved'      => $totalProcessed * 15,
+            'pending'         => EmailInbox::whereNotIn('status', ['resolved', 'archived'])->count(),
+            'unread'          => EmailInbox::where('is_read', false)->count(),
         ], 'Statistiques mails');
     }
 }

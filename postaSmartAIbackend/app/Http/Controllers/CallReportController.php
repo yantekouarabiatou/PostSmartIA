@@ -4,23 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Models\CallReport;
 use App\Services\ActivityLogService;
-use App\Services\GeminiService;
-use App\Services\GroqService;
+use App\Traits\HasAiFallback;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class CallReportController extends Controller
 {
-    private function withFallback(callable $fn): mixed
-    {
-        try {
-            return $fn(app(GeminiService::class));
-        } catch (\Exception $e) {
-            Log::warning('Gemini unavailable, falling back to Groq: ' . $e->getMessage());
-            return $fn(app(GroqService::class));
-        }
-    }
+    use HasAiFallback;
 
     public function generate(Request $request): JsonResponse
     {
@@ -41,8 +32,7 @@ class CallReportController extends Controller
             . ($request->next_steps    ? "Prochaines étapes :\n{$request->next_steps}"    : '');
 
         try {
-            $result = $this->withFallback(fn($ai) => $ai->generateCallReport($callData));
-
+            $result = $this->withAiFallback(fn($ai) => $ai->generateCallReport($callData));
             return response()->json(['success' => true, 'data' => $result]);
         } catch (\Exception $e) {
             Log::error('CallReport generate error: ' . $e->getMessage());
@@ -60,6 +50,8 @@ class CallReportController extends Controller
 
         $report = CallReport::create([
             'user_id'            => auth()->id(),
+            'email_inbox_id'     => $request->email_inbox_id,
+            'report_type'        => $request->report_type ?? 'client_email',
             'client_name'        => $request->client_name,
             'client_email'       => $request->client_email,
             'client_phone'       => $request->client_phone,
@@ -77,6 +69,9 @@ class CallReportController extends Controller
             'ai_quality_score'   => $request->ai_quality_score,
             'validated_at'       => now(),
             'status'             => 'validated',
+            'structured_data'    => $request->structured_data,
+            'internal_status'    => $request->internal_status ?? 'open',
+            'visible_to_manager' => $request->visible_to_manager ?? false,
         ]);
 
         ActivityLogService::log(
@@ -98,6 +93,32 @@ class CallReportController extends Controller
         $reports = CallReport::where('user_id', auth()->id())
             ->orderBy('created_at', 'desc')
             ->paginate(20);
+
+        return response()->json(['success' => true, 'data' => $reports]);
+    }
+
+    /**
+     * Vue consolidée pour les managers : tous les CR marqués visible_to_manager.
+     * Accessible uniquement via check.permission:view call reports (rôle manager/admin).
+     */
+    public function managerView(Request $request): JsonResponse
+    {
+        $query = CallReport::with(['user:id,name,email'])
+            ->where('visible_to_manager', true);
+
+        if ($request->filled('internal_status')) {
+            $query->where('internal_status', $request->internal_status);
+        }
+
+        if ($request->filled('report_type')) {
+            $query->where('report_type', $request->report_type);
+        }
+
+        if ($request->filled('user_id')) {
+            $query->where('user_id', $request->user_id);
+        }
+
+        $reports = $query->orderBy('created_at', 'desc')->paginate(20);
 
         return response()->json(['success' => true, 'data' => $reports]);
     }

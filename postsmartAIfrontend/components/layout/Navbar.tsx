@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import { api } from "@/lib/api"
-import { useI18n, type Locale } from "@/lib/i18n"
+import { useI18n, LangSwitcher } from "@/lib/i18n"
 import GlobalSearch from "@/components/ui/global-search"
 
 interface AuthUser {
@@ -29,39 +29,6 @@ const ROLE_COLOR: Record<string, string> = {
   conseiller: "#0066CC",
   manager:    "#854F0B",
   admin:      "#993C1D",
-}
-
-// ── Language switcher ─────────────────────────────────────────────────────────
-
-function LangSwitcher() {
-  const { locale, setLocale } = useI18n()
-  const langs: { code: Locale; flag: string; label: string }[] = [
-    { code: "fr", flag: "🇫🇷", label: "FR" },
-    { code: "en", flag: "🇬🇧", label: "EN" },
-  ]
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-      {langs.map(l => (
-        <button
-          key={l.code}
-          onClick={() => setLocale(l.code)}
-          title={l.code === "fr" ? "Français" : "English"}
-          style={{
-            display: "flex", alignItems: "center", gap: "4px",
-            padding: "4px 8px", borderRadius: "7px",
-            border: locale === l.code ? "1.5px solid #FFCC00" : "1.5px solid rgba(255,255,255,0.2)",
-            background: locale === l.code ? "rgba(255,204,0,0.15)" : "rgba(255,255,255,0.07)",
-            cursor: "pointer", fontSize: "12px", fontWeight: 600,
-            color: locale === l.code ? "#FFCC00" : "rgba(255,255,255,0.6)",
-            transition: "all 150ms",
-          }}
-        >
-          <span style={{ fontSize: "14px" }}>{l.flag}</span>
-          {l.label}
-        </button>
-      ))}
-    </div>
-  )
 }
 
 // ── Navbar ────────────────────────────────────────────────────────────────────

@@ -2,22 +2,28 @@
 
 namespace App\Services;
 
+use App\Contracts\AiServiceInterface;
+use App\Helpers\LogSanitizer;
+use App\Models\KnowledgeBase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-class GeminiService
+class GeminiService implements AiServiceInterface
 {
     private string $apiKey;
     private string $model;
     private string $baseUrl;
+    private SensitiveDataFilter $filter;
 
     public function __construct()
     {
         $this->apiKey  = config('services.gemini.api_key');
         $this->model   = config('services.gemini.model', 'gemini-2.0-flash');
-        $this->baseUrl = config('services.gemini.base_url',
-            'https://generativelanguage.googleapis.com/v1beta');
+        $this->baseUrl = config('services.gemini.base_url', 'https://generativelanguage.googleapis.com/v1beta');
+        $this->filter  = new SensitiveDataFilter();
     }
+
+    // ─── Couche transport ────────────────────────────────────────────────────
 
     private function complete(
         array $messages,
@@ -35,32 +41,29 @@ class GeminiService
         $payload = ['contents' => $contents];
 
         if ($systemPrompt) {
-            $payload['systemInstruction'] = [
-                'parts' => [['text' => $systemPrompt]],
-            ];
+            $payload['systemInstruction'] = ['parts' => [['text' => $systemPrompt]]];
         }
 
         if ($enableSearch) {
-            $payload['tools'] = [
-                ['google_search' => (object) []],
-            ];
+            $payload['tools'] = [['google_search' => (object) []]];
         }
 
+        // P0 — SSL vérifié ; P1 — fenêtre étendue à 4096 tokens
         $payload['generationConfig'] = [
             'temperature'     => 0.4,
-            'maxOutputTokens' => 1024,
+            'maxOutputTokens' => 4096,
         ];
 
         $url = "{$this->baseUrl}/models/{$this->model}:generateContent?key={$this->apiKey}";
 
-        $response = Http::withoutVerifying()->timeout(60)->post($url, $payload);
+        $response = Http::withOptions(['verify' => true])->timeout(60)->post($url, $payload);
 
         if ($response->failed()) {
-            Log::error('Gemini API error', [
+            LogSanitizer::error('Gemini API error', [
                 'status' => $response->status(),
-                'body'   => $response->body(),
+                'body'   => substr($response->body(), 0, 200),
             ]);
-            throw new \Exception('Gemini error ' . $response->status() . ': ' . $response->body());
+            throw new \Exception('Gemini error ' . $response->status() . ': ' . substr($response->body(), 0, 200));
         }
 
         return $response->json('candidates.0.content.parts.0.text', '');
@@ -85,30 +88,28 @@ class GeminiService
 
         // Stratégie 2 : nettoyer les balises markdown
         $clean = preg_replace('/^```(?:json)?\s*/m', '', $text);
-        $clean = preg_replace('/\s*```$/m', '', $clean);
-        $clean = trim($clean);
+        $clean = preg_replace('/\s*```$/m', '', $clean ?? '');
+        $clean = trim($clean ?? '');
         $result = json_decode($clean, true);
         if (json_last_error() === JSON_ERROR_NONE) {
             return $result;
         }
 
-        // Stratégie 3 : extraire { ... } même entouré de texte
+        // Stratégie 3 : extraire { ... }
         $start = strpos($clean, '{');
         $end   = strrpos($clean, '}');
         if ($start !== false && $end !== false && $end > $start) {
-            $extracted = substr($clean, $start, $end - $start + 1);
-            $result = json_decode($extracted, true);
+            $result = json_decode(substr($clean, $start, $end - $start + 1), true);
             if (json_last_error() === JSON_ERROR_NONE) {
                 return $result;
             }
         }
 
-        Log::error('Invalid JSON from Gemini', [
-            'raw_response' => $text,
-            'json_error'   => json_last_error_msg(),
-        ]);
-        throw new \Exception('Réponse IA invalide — impossible d\'extraire le JSON. Raw: ' . substr($text, 0, 300));
+        LogSanitizer::error('Invalid JSON from Gemini', ['json_error' => json_last_error_msg()]);
+        throw new \Exception('Réponse IA invalide — impossible d\'extraire le JSON.');
     }
+
+    // ─── System prompt & helpers ─────────────────────────────────────────────
 
     private function systemPrompt(): string
     {
@@ -119,19 +120,77 @@ Tu ne dois jamais inventer d'informations. Si tu ne connais pas une procédure p
 indique-le clairement au conseiller et suggère de vérifier les ressources internes.";
     }
 
+    /**
+     * Charge les règles de la charte relationnelle depuis la base de connaissances.
+     * Retourne une chaîne vide si aucune entrée de type 'charte' n'existe.
+     */
+    private function loadCharteRules(): string
+    {
+        try {
+            $items = KnowledgeBase::active()
+                ->where('type', 'charte')
+                ->select(['title', 'content'])
+                ->get();
+
+            if ($items->isEmpty()) {
+                return '';
+            }
+
+            return $items->map(fn($item) => "### {$item->title}\n{$item->content}")->implode("\n\n");
+        } catch (\Exception $e) {
+            Log::warning('Impossible de charger les règles charte KB : ' . $e->getMessage());
+            return '';
+        }
+    }
+
+    /**
+     * P2 — Seconde passe de vérification de conformité charte.
+     * Le LLM vérificateur est distinct du LLM rédacteur (prompt isolé).
+     */
+    private function verifyCharteCompliance(string $emailBody, string $charteRules): array
+    {
+        try {
+            $verifierSystem = "Tu es un auditeur qualité indépendant de La Poste. " .
+                "Ta seule tâche est d'évaluer la conformité d'un mail aux règles de la charte. " .
+                "Tu ne rédiges rien, tu audites uniquement. Réponds en JSON strict.";
+
+            $prompt = "Évalue ce mail de réponse La Poste selon les règles de la charte suivantes.\n\n" .
+                "## Règles de la charte :\n{$charteRules}\n\n" .
+                "## Mail à auditer :\n{$emailBody}\n\n" .
+                "Retourne ce JSON :\n" .
+                "{\n" .
+                "  \"score\": 85,\n" .
+                "  \"compliant\": true,\n" .
+                "  \"issues\": [\"violation détectée si applicable\"],\n" .
+                "  \"suggestions\": [\"amélioration possible\"]\n" .
+                "}";
+
+            return $this->completeJson(
+                [['role' => 'user', 'content' => $prompt]],
+                $verifierSystem
+            );
+        } catch (\Exception $e) {
+            Log::warning('Vérification charte échouée (non-bloquant) : ' . $e->getMessage());
+            return ['score' => 0, 'compliant' => false, 'issues' => [], 'suggestions' => []];
+        }
+    }
+
+    // ─── Interface publique ──────────────────────────────────────────────────
+
     public function detectEscalationSignals(
         string $emailContent,
         string $serviceType,
         ?string $previousStatus = null,
         ?int $daysSinceFirstContact = null
     ): array {
-        $truncated = substr(strip_tags($emailContent), 0, 1000);
+        ['text' => $anonymized, 'map' => $map] = $this->filter->anonymize($emailContent);
+        $truncated = substr(strip_tags($anonymized), 0, 1000);
 
         $context = '';
         if ($previousStatus)        $context .= "Statut précédent du dossier : $previousStatus. ";
         if ($daysSinceFirstContact) $context .= "Jours depuis premier contact : $daysSinceFirstContact jours. ";
 
-        return $this->completeJson([
+        $result = $this->completeJson([
             ['role' => 'user', 'content' =>
                 "Analyse ce mail client La Poste et détecte les signaux d'escalade.
                 $context
@@ -167,10 +226,23 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
                 Mail : $truncated"
             ]
         ], "Détecteur de signaux d'escalade La Poste. JSON uniquement.");
+
+        // Restaurer les données sensibles dans les champs 'quote'
+        if (isset($result['signals_detected']) && is_array($result['signals_detected'])) {
+            foreach ($result['signals_detected'] as &$signal) {
+                if (isset($signal['quote'])) {
+                    $signal['quote'] = $this->filter->restore($signal['quote'], $map);
+                }
+            }
+        }
+
+        return $result;
     }
 
     public function analyzeEmail(string $emailContent): array
     {
+        ['text' => $anonymized] = $this->filter->anonymize($emailContent);
+
         return $this->completeJson(
             [['role' => 'user', 'content' =>
                 "Analyse ce mail client et retourne un JSON avec :
@@ -184,7 +256,7 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
                   \"key_points\": [\"point1\", \"point2\"],
                   \"suggested_actions\": [\"action1\", \"action2\"]
                 }
-                Mail : $emailContent",
+                Mail : $anonymized",
             ]],
             $this->systemPrompt()
         );
@@ -192,7 +264,17 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
 
     public function generateEmailResponse(string $emailContent, string $serviceType = ''): array
     {
-        return $this->completeJson(
+        // P0 — Anonymisation avant envoi API externe
+        ['text' => $anonymized, 'map' => $map] = $this->filter->anonymize($emailContent);
+
+        // P2 — Charger les règles de la charte
+        $charteRules = $this->loadCharteRules();
+        $system      = $this->systemPrompt();
+        if ($charteRules) {
+            $system .= "\n\n## Règles de la charte relationnelle La Poste (à respecter impérativement) :\n" . $charteRules;
+        }
+
+        $result = $this->completeJson(
             [['role' => 'user', 'content' =>
                 "Génère une réponse professionnelle à ce mail client ($serviceType).
                 Retourne UNIQUEMENT ce JSON (les scores sont des entiers réels entre 0 et 100, PAS des zéros) :
@@ -208,20 +290,47 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
                   \"tone\": \"professionnel\",
                   \"warnings\": []
                 }
-                Évalue honnêtement la qualité de la réponse que tu génères sur ces 3 critères :
-                - clarity (clarté et structure) : 0-100
-                - empathy (ton empathique et humain) : 0-100
-                - compliance (conformité à la charte La Poste) : 0-100
-                - overall : moyenne pondérée des 3 scores
-                Mail original : $emailContent",
+                Évalue honnêtement : clarity (0-100), empathy (0-100), compliance (0-100), overall = moyenne.
+                Mail original : $anonymized",
             ]],
-            $this->systemPrompt()
+            $system
         );
+
+        // P0 — Restaurer les données sensibles dans le corps généré
+        if (isset($result['body'])) {
+            $result['body'] = $this->filter->restore($result['body'], $map);
+        }
+
+        // P2 — Seconde passe de vérification (LLM vérificateur ≠ LLM rédacteur)
+        if ($charteRules && isset($result['body'])) {
+            $compliance = $this->verifyCharteCompliance($result['body'], $charteRules);
+            $result['compliance_verification'] = $compliance;
+
+            // Écraser le score compliance auto-évalué par le score audité
+            if (isset($compliance['score'], $result['quality_score'])) {
+                $result['quality_score']['compliance'] = $compliance['score'];
+                $result['quality_score']['overall'] = (int) round((
+                    ($result['quality_score']['clarity']  ?? 0) +
+                    ($result['quality_score']['empathy']  ?? 0) +
+                    $compliance['score']
+                ) / 3);
+            }
+        }
+
+        return $result;
     }
 
-    public function improveEmail(string $draftContent): array
+    public function improveEmail(string $content): array
     {
-        return $this->completeJson(
+        ['text' => $anonymized, 'map' => $map] = $this->filter->anonymize($content);
+
+        $charteRules = $this->loadCharteRules();
+        $system      = $this->systemPrompt();
+        if ($charteRules) {
+            $system .= "\n\n## Règles charte à respecter :\n" . $charteRules;
+        }
+
+        $result = $this->completeJson(
             [['role' => 'user', 'content' =>
                 "Améliore ce brouillon de réponse conseiller.
                 Retourne un JSON :
@@ -235,27 +344,63 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
                     \"overall\": 0
                   }
                 }
-                Brouillon : $draftContent",
+                Brouillon : $anonymized",
             ]],
-            $this->systemPrompt()
+            $system
         );
+
+        if (isset($result['improved_body'])) {
+            $result['improved_body'] = $this->filter->restore($result['improved_body'], $map);
+        }
+
+        if ($charteRules && isset($result['improved_body'])) {
+            $compliance = $this->verifyCharteCompliance($result['improved_body'], $charteRules);
+            $result['compliance_verification'] = $compliance;
+            if (isset($compliance['score'], $result['quality_score'])) {
+                $result['quality_score']['compliance'] = $compliance['score'];
+                $result['quality_score']['overall'] = (int) round((
+                    ($result['quality_score']['clarity'] ?? 0) +
+                    ($result['quality_score']['empathy'] ?? 0) +
+                    $compliance['score']
+                ) / 3);
+            }
+        }
+
+        return $result;
     }
 
     public function generateCallReport(string $callData): array
     {
-        return $this->completeJson(
+        ['text' => $anonymized, 'map' => $map] = $this->filter->anonymize($callData);
+
+        $result = $this->completeJson(
             [['role' => 'user', 'content' =>
-                "Génère un mail post-appel structuré destiné au client. Retourne un JSON :
+                "Génère un mail post-appel structuré destiné au client ET un rapport interne.
+                Retourne ce JSON :
                 {
-                  \"subject\": \"Objet du mail\",
-                  \"body\": \"Corps complet du mail professionnel et empathique\",
+                  \"subject\": \"Objet du mail client\",
+                  \"body\": \"Corps complet du mail professionnel et empathique destiné au client\",
+                  \"structured_data\": {
+                    \"context\": \"contexte de l'appel en 1-2 phrases\",
+                    \"client_request\": \"demande principale du client\",
+                    \"actions_taken\": [\"action effectuée 1\", \"action effectuée 2\"],
+                    \"commitments\": [\"engagement pris 1\"],
+                    \"follow_up_date\": null,
+                    \"status\": \"open\"
+                  },
                   \"quality_score\": { \"clarity\": 0, \"empathy\": 0, \"compliance\": 0, \"overall\": 0 }
                 }
                 Les scores sont des entiers entre 0 et 100.
-                Données de l'appel : $callData",
+                Données de l'appel : $anonymized",
             ]],
             $this->systemPrompt()
         );
+
+        if (isset($result['body'])) {
+            $result['body'] = $this->filter->restore($result['body'], $map);
+        }
+
+        return $result;
     }
 
     // enableSearch active Google Search Grounding (ajoute ~10-15s — désactivé par défaut)
@@ -290,7 +435,12 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
                 "Guide le conseiller clairement sur la procédure et propose une formulation adaptée pour le mail.";
         }
 
-        $reply = $this->complete($messages, $system, enableSearch: $enableSearch);
+        // Anonymiser le dernier message utilisateur avant envoi
+        $sanitizedMessages = $messages;
+        $lastIdx = count($sanitizedMessages) - 1;
+        ['text' => $sanitizedMessages[$lastIdx]['content']] = $this->filter->anonymize($sanitizedMessages[$lastIdx]['content']);
+
+        $reply = $this->complete($sanitizedMessages, $system, enableSearch: $enableSearch);
 
         return [
             'reply'          => $reply,

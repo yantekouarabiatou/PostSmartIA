@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Sparkles, Copy, Check, RefreshCw, Save, User, FileText,
   MessageSquare, ChevronDown, AlertCircle,
@@ -36,6 +36,14 @@ export default function GenerateEmailPage() {
   const [emailType, setEmailType]           = useState("livraison")
   const [tone, setTone]                     = useState("professionnel")
   const [context, setContext]               = useState("")
+
+  useEffect(() => {
+    const injected = sessionStorage.getItem("kb_inject")
+    if (injected) {
+      setContext(injected)
+      sessionStorage.removeItem("kb_inject")
+    }
+  }, [])
   const [additionalInfo, setAdditionalInfo] = useState("")
   const [showAdvanced, setShowAdvanced]     = useState(false)
 

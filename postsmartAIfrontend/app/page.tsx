@@ -6,6 +6,7 @@ import {
   Mail, Phone, Bot, Check, Star, Sparkles,
   ArrowRight, ChevronDown, Mic, Shield, Zap, Users,
 } from "lucide-react"
+import { LanguageProvider, LangSwitcher, useI18n } from "@/lib/i18n"
 
 // ── Intersection hook ─────────────────────────────────────────────────────────
 
@@ -124,82 +125,25 @@ function DashboardMock() {
   )
 }
 
-// ── Data ──────────────────────────────────────────────────────────────────────
+// ── Static data ───────────────────────────────────────────────────────────────
 
-const STATS = [
-  { end: 2400, suffix: "+", label: "Conseillers actifs" },
-  { end: 18000, suffix: "",  label: "Emails traités / jour" },
-  { end: 65,   suffix: "%", label: "Temps de réponse réduit", prefix: "−" },
-  { end: 98,   suffix: "%", label: "Conformité charte La Poste" },
+const STATS_DATA = [
+  { end: 2400,  suffix: "+" },
+  { end: 18000, suffix: ""  },
+  { end: 65,    suffix: "%" },
+  { end: 98,    suffix: "%" },
 ]
 
-const STEPS = [
-  {
-    n: "01", icon: <Mail size={22} color="#0066CC" />, color: "#EBF4FF", border: "#BFDBFE",
-    title: "Mail entrant détecté",
-    desc: "L'IA analyse instantanément le contenu, détecte le type de demande, le niveau d'urgence et génère une réponse professionnelle prête à valider.",
-    tag: "Traitement en < 3 sec",
-  },
-  {
-    n: "02", icon: <Mic size={22} color="#7C3AED" />, color: "#F5F3FF", border: "#DDD6FE",
-    title: "Appel terminé — résumé dicté",
-    desc: "Après l'appel, dictez librement votre résumé dans le navigateur. L'IA structure le compte-rendu et génère le mail post-appel. Aucun audio conservé.",
-    tag: "100% RGPD · 0 stockage audio",
-  },
-  {
-    n: "03", icon: <Bot size={22} color="#059669" />, color: "#F0FDF4", border: "#BBF7D0",
-    title: "Question → Réponse immédiate",
-    desc: "Posez vos questions en langage naturel. L'assistant puise dans la base documentaire La Poste pour vous répondre avec précision en quelques secondes.",
-    tag: "Disponible 24/7",
-  },
+const STEP_COLORS = [
+  { color: "#EBF4FF", border: "#BFDBFE", icon: <Mail size={22} color="#0066CC" /> },
+  { color: "#F5F3FF", border: "#DDD6FE", icon: <Mic  size={22} color="#7C3AED" /> },
+  { color: "#F0FDF4", border: "#BBF7D0", icon: <Bot  size={22} color="#059669" /> },
 ]
 
-const FEATURES = [
-  {
-    icon: <Mail size={26} color="#0066CC" />, bg: "#EBF4FF",
-    title: "Traitement des mails entrants",
-    desc: "Analysez, catégorisez et répondez aux mails clients avec une précision inégalée.",
-    bullets: [
-      "Détection automatique du type de demande (suivi colis, réclamation, handicap…)",
-      "Génération de réponse personnalisée en 1 clic",
-      "Score qualité : clarté, empathie, conformité charte",
-    ],
-  },
-  {
-    icon: <Mic size={26} color="#7C3AED" />, bg: "#F5F3FF",
-    title: "Compte-rendu d'appel",
-    desc: "Transformez vos notes d'appel vocales en comptes-rendus structurés et mails clients prêts à envoyer.",
-    bullets: [
-      "Dictée vocale directement dans le navigateur",
-      "Structuration automatique : résumé, engagements, prochaines étapes",
-      "Mail post-appel généré en 30 secondes",
-    ],
-  },
-  {
-    icon: <Bot size={26} color="#059669" />, bg: "#F0FDF4",
-    title: "Assistant documentaire IA",
-    desc: "Un copilote intelligent disponible 24/7 pour toutes vos questions procédurales.",
-    bullets: [
-      "Base de connaissances La Poste intégrée",
-      "Réponses contextuelles en langage naturel",
-      "Suggestions de formulations adaptées à chaque situation",
-    ],
-  },
-]
-
-const TESTIMONIALS = [
-  {
-    initials: "SM", bg: "#0066CC", name: "Sophie M.", role: "Conseillère · Paris 15e",
-    quote: "PostSmart IA m'a changé la vie. Je traite mes mails deux fois plus vite et mes réponses sont bien plus professionnelles. Mes clients le remarquent.",
-  },
-  {
-    initials: "KB", bg: "#7C3AED", name: "Karim B.", role: "Manager d'équipe · Lyon",
-    quote: "L'outil est indispensable pour notre équipe. Les comptes-rendus d'appel sont impeccables et notre direction est ravie de la qualité de service.",
-  },
-  {
-    initials: "IT", bg: "#059669", name: "Isabelle T.", role: "Conseillère · Bordeaux",
-    quote: "L'assistant IA connaît toutes les procédures La Poste par cœur. Je gagne un temps fou et je n'ai plus peur de me tromper de formulation.",
-  },
+const FEAT_ICONS = [
+  { icon: <Mail size={26} color="#0066CC" />, bg: "#EBF4FF" },
+  { icon: <Mic  size={26} color="#7C3AED" />, bg: "#F5F3FF" },
+  { icon: <Bot  size={26} color="#059669" />, bg: "#F0FDF4" },
 ]
 
 const TECH = [
@@ -207,6 +151,12 @@ const TECH = [
   { label: "Groq",       sub: "Ultra-fast LLM",   color: "#F06292", emoji: "⚡" },
   { label: "Laravel 12", sub: "API Backend",      color: "#FF2D20", emoji: "🔧" },
   { label: "Next.js 16", sub: "Frontend",         color: "#000",    emoji: "▲"  },
+]
+
+const TESTIMONIALS = [
+  { initials: "SM", bg: "#0066CC", name: "Sophie M.", role: "Conseillère · Paris 15e", quote: "PostSmart IA m'a changé la vie. Je traite mes mails deux fois plus vite et mes réponses sont bien plus professionnelles. Mes clients le remarquent." },
+  { initials: "KB", bg: "#7C3AED", name: "Karim B.",  role: "Manager d'équipe · Lyon",  quote: "L'outil est indispensable pour notre équipe. Les comptes-rendus d'appel sont impeccables et notre direction est ravie de la qualité de service." },
+  { initials: "IT", bg: "#059669", name: "Isabelle T.", role: "Conseillère · Bordeaux", quote: "L'assistant IA connaît toutes les procédures La Poste par cœur. Je gagne un temps fou et je n'ai plus peur de me tromper de formulation." },
 ]
 
 // ── CSS ───────────────────────────────────────────────────────────────────────
@@ -217,7 +167,6 @@ const CSS = `
 
   .ld { font-family: 'Inter', sans-serif; color: #1A1A2E; }
 
-  /* ══ NAVBAR ══ */
   .ld-nav {
     position: fixed; top: 0; left: 0; right: 0; z-index: 500;
     height: 64px; display: flex; align-items: center;
@@ -268,7 +217,6 @@ const CSS = `
   }
   .ld-nav-cta:hover { background: #FFB300; transform: translateY(-1px); box-shadow: 0 5px 16px rgba(255,204,0,0.45); }
 
-  /* ══ HERO ══ */
   .ld-hero {
     min-height: 100vh; position: relative;
     background: #02091A; overflow: hidden;
@@ -279,9 +227,7 @@ const CSS = `
     background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px);
     background-size: 28px 28px;
   }
-  .ld-hero-orb {
-    position: absolute; border-radius: 50%; pointer-events: none; filter: blur(55px);
-  }
+  .ld-hero-orb { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(55px); }
   .ld-orb-a { width: 520px; height: 520px; background: radial-gradient(circle, rgba(0,102,204,0.32) 0%, transparent 70%); top: -120px; right: 5%; animation: orb-a 18s ease-in-out infinite; }
   .ld-orb-b { width: 380px; height: 380px; background: radial-gradient(circle, rgba(255,204,0,0.11) 0%, transparent 70%); bottom: -80px; left: 8%; animation: orb-a 22s ease-in-out infinite reverse; }
   .ld-orb-c { width: 260px; height: 260px; background: radial-gradient(circle, rgba(124,58,237,0.18) 0%, transparent 70%); top: 40%; left: 20%; animation: orb-a 14s ease-in-out 4s infinite; }
@@ -297,7 +243,6 @@ const CSS = `
     display: flex; align-items: center; gap: 60px;
   }
   @media (max-width: 900px) { .ld-hero-in { flex-direction: column; text-align: center; padding: 110px 1.5rem 60px; } }
-
   .ld-hero-left { flex: 1; min-width: 0; }
   .ld-hero-tag {
     display: inline-flex; align-items: center; gap: 6px;
@@ -354,13 +299,11 @@ const CSS = `
   .ld-trust-dot { width: 5px; height: 5px; border-radius: 50%; background: #34D399; box-shadow: 0 0 6px rgba(52,211,153,0.7); flex-shrink: 0; }
   .ld-trust-text { font-size: 12.5px; color: rgba(255,255,255,0.4); }
   .ld-trust-sep { color: rgba(255,255,255,0.15); font-size: 13px; }
-
   .ld-hero-right {
     flex-shrink: 0; display: flex; align-items: center; justify-content: center;
     animation: fade-up 0.7s 0.2s ease both;
   }
   @media (max-width: 900px) { .ld-hero-right { width: 100%; max-width: 380px; margin: 0 auto; } }
-
   @keyframes mock-float {
     0%,100% { transform: translateY(0) rotate(0.5deg); }
     50%      { transform: translateY(-14px) rotate(-0.5deg); }
@@ -369,8 +312,6 @@ const CSS = `
     from { opacity: 0; transform: translateY(24px); }
     to   { opacity: 1; transform: translateY(0); }
   }
-
-  /* Scroll arrow */
   .ld-scroll {
     position: absolute; bottom: 2rem; left: 50%;
     transform: translateX(-50%); z-index: 2;
@@ -381,40 +322,26 @@ const CSS = `
   }
   @keyframes bounce { 0%,100% { transform: translate(-50%,0); } 50% { transform: translate(-50%,-8px); } }
 
-  /* ══ PARTNERS ══ */
-  .ld-partners {
-    background: #fff; padding: 32px 2rem;
-    border-bottom: 1px solid #F0F2F5;
-  }
-  .ld-partners-in {
-    max-width: 900px; margin: 0 auto;
-    display: flex; align-items: center; gap: 0; flex-wrap: wrap;
-    justify-content: center;
-  }
+  .ld-partners { background: #fff; padding: 32px 2rem; border-bottom: 1px solid #F0F2F5; }
+  .ld-partners-in { max-width: 900px; margin: 0 auto; display: flex; align-items: center; gap: 0; flex-wrap: wrap; justify-content: center; }
   .ld-partner-label { font-size: 12px; color: #B0B8C4; font-weight: 500; margin-right: 24px; white-space: nowrap; }
   .ld-partner-badges { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
   .ld-partner-badge {
     display: inline-flex; align-items: center; gap: 7px;
     padding: 6px 14px; border-radius: 20px;
     border: 1px solid #E5E7EB; background: #F9FAFB;
-    font-size: 12px; font-weight: 600; color: #374151;
-    transition: all 0.2s;
+    font-size: 12px; font-weight: 600; color: #374151; transition: all 0.2s;
   }
   .ld-partner-badge:hover { border-color: #0066CC; background: #EBF4FF; color: #0066CC; }
 
-  /* ══ STATS ══ */
   .ld-stats { background: #00205B; padding: 72px 2rem; }
-  .ld-stats-in {
-    max-width: 1000px; margin: 0 auto;
-    display: grid; grid-template-columns: repeat(2,1fr); gap: 2.5rem 2rem;
-  }
+  .ld-stats-in { max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: repeat(2,1fr); gap: 2.5rem 2rem; }
   @media (min-width: 768px) { .ld-stats-in { grid-template-columns: repeat(4,1fr); } }
   .ld-stat { text-align: center; }
   .ld-stat-val { font-size: 44px; font-weight: 900; color: #fff; line-height: 1; letter-spacing: -0.04em; margin-bottom: 6px; }
   .ld-stat-val .acc { color: #FFCC00; }
   .ld-stat-lbl { font-size: 13px; color: rgba(255,255,255,0.5); line-height: 1.45; }
 
-  /* ══ HOW IT WORKS ══ */
   .ld-hiw { background: #F4F7FF; padding: 100px 2rem; }
   .ld-hiw-in { max-width: 1100px; margin: 0 auto; }
   .ld-section-tag {
@@ -422,10 +349,7 @@ const CSS = `
     color: #0066CC; background: #EBF4FF; border-radius: 20px;
     padding: 4px 14px; margin-bottom: 1rem; letter-spacing: 0.05em; text-transform: uppercase;
   }
-  .ld-section-h2 {
-    font-size: 36px; font-weight: 800; color: #00205B;
-    letter-spacing: -0.03em; margin-bottom: 0.75rem;
-  }
+  .ld-section-h2 { font-size: 36px; font-weight: 800; color: #00205B; letter-spacing: -0.03em; margin-bottom: 0.75rem; }
   @media (max-width: 640px) { .ld-section-h2 { font-size: 26px; } }
   .ld-section-sub { font-size: 16px; color: #6B7280; line-height: 1.65; max-width: 480px; margin-bottom: 3.5rem; }
   .ld-steps { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
@@ -436,149 +360,76 @@ const CSS = `
     transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
   }
   .ld-step:hover { border-color: #0066CC; box-shadow: 0 12px 36px rgba(0,102,204,0.1); transform: translateY(-4px); }
-  .ld-step-n {
-    font-size: 52px; font-weight: 900; color: #E5E7EB;
-    letter-spacing: -0.04em; line-height: 1; margin-bottom: 12px;
-    font-variant-numeric: tabular-nums;
-  }
+  .ld-step-n { font-size: 52px; font-weight: 900; color: #E5E7EB; letter-spacing: -0.04em; line-height: 1; margin-bottom: 12px; }
   .ld-step:hover .ld-step-n { color: rgba(0,102,204,0.15); }
-  .ld-step-icon {
-    width: 44px; height: 44px; border-radius: 12px;
-    display: flex; align-items: center; justify-content: center;
-    margin-bottom: 14px;
-  }
+  .ld-step-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 14px; }
   .ld-step-title { font-size: 17px; font-weight: 700; color: #00205B; margin-bottom: 8px; }
   .ld-step-desc { font-size: 14px; color: #6B7280; line-height: 1.65; margin-bottom: 14px; }
-  .ld-step-tag {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-size: 11px; font-weight: 600;
-    padding: 3px 10px; border-radius: 20px;
-    border: 1px solid; opacity: 0.8;
-  }
+  .ld-step-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; border: 1px solid; opacity: 0.8; }
 
-  /* ══ FEATURES ══ */
   .ld-feats { background: #fff; padding: 100px 2rem; }
-  .ld-feats-grid {
-    max-width: 1100px; margin: 0 auto;
-    display: grid; gap: 1.5rem; grid-template-columns: 1fr;
-  }
+  .ld-feats-grid { max-width: 1100px; margin: 0 auto; display: grid; gap: 1.5rem; grid-template-columns: 1fr; }
   @media (min-width: 768px) { .ld-feats-grid { grid-template-columns: repeat(3,1fr); } }
   .ld-feat-card {
     border: 1.5px solid #E5E7EB; border-radius: 20px; padding: 2rem;
     transition: all 0.25s; position: relative; overflow: hidden;
   }
-  .ld-feat-card::after {
-    content: ''; position: absolute; inset: 0;
-    background: linear-gradient(135deg, transparent 60%, rgba(0,102,204,0.03) 100%);
-    pointer-events: none; opacity: 0; transition: opacity 0.3s;
-  }
   .ld-feat-card:hover { border-color: #0066CC; transform: translateY(-5px); box-shadow: 0 16px 40px rgba(0,102,204,0.12); }
-  .ld-feat-card:hover::after { opacity: 1; }
-  .ld-feat-ico {
-    width: 56px; height: 56px; border-radius: 16px;
-    display: flex; align-items: center; justify-content: center; margin-bottom: 1.25rem;
-  }
+  .ld-feat-ico { width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center; justify-content: center; margin-bottom: 1.25rem; }
   .ld-feat-title { font-size: 18px; font-weight: 700; color: #00205B; margin-bottom: 8px; }
   .ld-feat-desc { font-size: 14px; color: #6B7280; line-height: 1.65; margin-bottom: 1.25rem; }
   .ld-feat-bullets { list-style: none; display: flex; flex-direction: column; gap: 8px; }
   .ld-feat-bullet { display: flex; gap: 9px; align-items: flex-start; font-size: 13.5px; color: #374151; line-height: 1.5; }
 
-  /* ══ TECH ══ */
   .ld-tech { background: #F4F7FF; padding: 72px 2rem; }
   .ld-tech-in { max-width: 900px; margin: 0 auto; text-align: center; }
   .ld-tech-lbl { font-size: 13px; color: #9CA3AF; font-weight: 500; margin-bottom: 1.75rem; letter-spacing: 0.04em; text-transform: uppercase; }
   .ld-tech-badges { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .ld-tech-badge {
-    display: flex; align-items: center; gap: 8px;
-    background: #fff; border: 1.5px solid #E5E7EB; border-radius: 14px;
-    padding: 10px 18px; font-size: 13px; font-weight: 600;
-    transition: all 0.2s; cursor: default;
-  }
+  .ld-tech-badge { display: flex; align-items: center; gap: 8px; background: #fff; border: 1.5px solid #E5E7EB; border-radius: 14px; padding: 10px 18px; font-size: 13px; font-weight: 600; transition: all 0.2s; cursor: default; }
   .ld-tech-badge:hover { border-color: #0066CC; box-shadow: 0 4px 16px rgba(0,102,204,0.1); transform: translateY(-2px); }
   .ld-tech-emoji { font-size: 18px; }
   .ld-tech-name { color: #1A1A2E; }
   .ld-tech-sub { font-size: 11px; color: #9CA3AF; font-weight: 400; }
 
-  /* ══ TESTIMONIALS ══ */
   .ld-testis { background: #fff; padding: 100px 2rem; }
-  .ld-testi-grid {
-    max-width: 1100px; margin: 0 auto;
-    display: grid; gap: 1.5rem; grid-template-columns: 1fr;
-  }
+  .ld-testi-grid { max-width: 1100px; margin: 0 auto; display: grid; gap: 1.5rem; grid-template-columns: 1fr; }
   @media (min-width: 768px) { .ld-testi-grid { grid-template-columns: repeat(3,1fr); } }
-  .ld-testi-card {
-    border: 1px solid #E5E7EB; border-radius: 20px; padding: 1.75rem;
-    transition: box-shadow 0.25s, transform 0.25s; position: relative;
-  }
+  .ld-testi-card { border: 1px solid #E5E7EB; border-radius: 20px; padding: 1.75rem; transition: box-shadow 0.25s, transform 0.25s; }
   .ld-testi-card:hover { box-shadow: 0 12px 32px rgba(0,0,0,0.08); transform: translateY(-3px); }
-  .ld-testi-quote {
-    font-size: 15px; color: #374151; line-height: 1.75;
-    margin-bottom: 1.5rem; position: relative;
-    padding-top: 1.5rem;
-  }
-  .ld-testi-quote::before {
-    content: '"'; position: absolute; top: -8px; left: -4px;
-    font-size: 80px; color: #EBF4FF; font-family: Georgia, serif;
-    line-height: 1; z-index: 0;
-  }
-  .ld-testi-body { position: relative; z-index: 1; }
+  .ld-testi-quote { font-size: 15px; color: #374151; line-height: 1.75; margin-bottom: 1.5rem; position: relative; padding-top: 1.5rem; }
+  .ld-testi-quote::before { content: '"'; position: absolute; top: -8px; left: -4px; font-size: 80px; color: #EBF4FF; font-family: Georgia, serif; line-height: 1; }
   .ld-testi-footer { display: flex; align-items: center; gap: 12px; }
-  .ld-testi-av {
-    width: 44px; height: 44px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 14px; font-weight: 700; color: #fff; flex-shrink: 0;
-  }
+  .ld-testi-av { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: #fff; flex-shrink: 0; }
   .ld-testi-name { font-size: 14px; font-weight: 700; color: #1A1A2E; }
   .ld-testi-role { font-size: 12px; color: #9CA3AF; }
   .ld-stars { display: flex; gap: 2px; margin-bottom: 12px; }
 
-  /* ══ CTA ══ */
-  .ld-cta {
-    background: #02091A; padding: 100px 2rem;
-    text-align: center; position: relative; overflow: hidden;
-  }
-  .ld-cta-orb {
-    position: absolute; border-radius: 50%; pointer-events: none;
-    width: 500px; height: 500px; filter: blur(60px);
-    background: radial-gradient(circle, rgba(0,102,204,0.3) 0%, transparent 70%);
-    top: -100px; left: 50%; transform: translateX(-50%);
-  }
+  .ld-cta { background: #02091A; padding: 100px 2rem; text-align: center; position: relative; overflow: hidden; }
+  .ld-cta-orb { position: absolute; border-radius: 50%; pointer-events: none; width: 500px; height: 500px; filter: blur(60px); background: radial-gradient(circle, rgba(0,102,204,0.3) 0%, transparent 70%); top: -100px; left: 50%; transform: translateX(-50%); }
   .ld-cta-in { position: relative; z-index: 1; max-width: 600px; margin: 0 auto; }
-  .ld-cta-h2 {
-    font-size: 42px; font-weight: 900; color: #fff;
-    letter-spacing: -0.04em; line-height: 1.18; margin-bottom: 1rem;
-  }
+  .ld-cta-h2 { font-size: 42px; font-weight: 900; color: #fff; letter-spacing: -0.04em; line-height: 1.18; margin-bottom: 1rem; }
   @media (max-width: 640px) { .ld-cta-h2 { font-size: 30px; } }
   .ld-cta-sub { font-size: 16px; color: rgba(255,255,255,0.5); line-height: 1.65; margin-bottom: 2.5rem; }
   .ld-cta-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 
-  /* ══ FOOTER ══ */
   .ld-footer { background: #010B1A; padding: 44px 2rem; border-top: 1px solid rgba(255,255,255,0.05); }
-  .ld-footer-in {
-    max-width: 1100px; margin: 0 auto;
-    display: flex; flex-wrap: wrap; align-items: center;
-    justify-content: space-between; gap: 1.25rem;
-  }
+  .ld-footer-in { max-width: 1100px; margin: 0 auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1.25rem; }
   .ld-footer-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
-  .ld-footer-badge {
-    width: 28px; height: 28px; border-radius: 8px;
-    background: rgba(255,204,0,0.85); display: flex; align-items: center; justify-content: center;
-  }
+  .ld-footer-badge { width: 28px; height: 28px; border-radius: 8px; background: rgba(255,204,0,0.85); display: flex; align-items: center; justify-content: center; }
   .ld-footer-name { font-size: 14px; font-weight: 700; color: rgba(255,255,255,0.55); }
   .ld-footer-name .y { color: #FFCC00; }
   .ld-footer-links { display: flex; gap: 1.5rem; flex-wrap: wrap; }
-  .ld-footer-link {
-    font-size: 12px; color: rgba(255,255,255,0.38);
-    text-decoration: none; background: none; border: none;
-    cursor: pointer; font-family: 'Inter', sans-serif; transition: color 0.15s;
-  }
+  .ld-footer-link { font-size: 12px; color: rgba(255,255,255,0.38); text-decoration: none; background: none; border: none; cursor: pointer; font-family: 'Inter', sans-serif; transition: color 0.15s; }
   .ld-footer-link:hover { color: rgba(255,255,255,0.7); }
   .ld-footer-copy { font-size: 12px; color: rgba(255,255,255,0.22); }
 `
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ── Inner page (needs i18n context) ──────────────────────────────────────────
 
-export default function LandingPage() {
+function LandingContent() {
+  const { t } = useI18n()
+  const l = t.landing
+
   const [scrolled, setScrolled] = useState(false)
   const statsRef = useRef<HTMLElement>(null)
   const statsVisible = useVisible(statsRef)
@@ -613,14 +464,17 @@ export default function LandingPage() {
             </Link>
 
             <div className="ld-nav-links">
-              <button className="ld-nav-link" onClick={() => scrollTo("hiw")}>Comment ça marche</button>
-              <button className="ld-nav-link" onClick={() => scrollTo("feats")}>Fonctionnalités</button>
-              <button className="ld-nav-link" onClick={() => scrollTo("testis")}>Témoignages</button>
+              <button className="ld-nav-link" onClick={() => scrollTo("hiw")}>{l.nav.howItWorks}</button>
+              <button className="ld-nav-link" onClick={() => scrollTo("feats")}>{l.nav.features}</button>
+              <button className="ld-nav-link" onClick={() => scrollTo("testis")}>{l.nav.testimonials}</button>
             </div>
 
-            <Link href="/login" className="ld-nav-cta">
-              Se connecter <ArrowRight size={14} />
-            </Link>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <LangSwitcher dark={scrolled} />
+              <Link href="/login" className="ld-nav-cta">
+                {l.nav.login} <ArrowRight size={14} />
+              </Link>
+            </div>
           </div>
         </nav>
 
@@ -632,38 +486,33 @@ export default function LandingPage() {
           <div className="ld-hero-orb ld-orb-c" />
 
           <div className="ld-hero-in">
-            {/* Left */}
             <div className="ld-hero-left">
               <div className="ld-hero-tag">
-                <Sparkles size={11} /> Hackathon La Poste × EY × Microsoft
+                <Sparkles size={11} /> {l.hero.tag}
               </div>
               <h1 className="ld-hero-h1">
-                L'IA qui transforme<br />
-                <span className="ld-hero-grad">votre relation client.</span>
+                {l.hero.h1a}<br />
+                <span className="ld-hero-grad">{l.hero.h1b}</span>
               </h1>
-              <p className="ld-hero-sub">
-                Analysez les mails entrants, rédigez vos comptes-rendus d'appel en 30 secondes
-                et accédez aux procédures La Poste en temps réel. Tout en un seul outil.
-              </p>
+              <p className="ld-hero-sub">{l.hero.sub}</p>
               <div className="ld-hero-ctas">
                 <Link href="/login" className="ld-btn-primary">
-                  Accéder à l'application <ArrowRight size={15} />
+                  {l.hero.cta1} <ArrowRight size={15} />
                 </Link>
                 <button className="ld-btn-secondary" onClick={() => scrollTo("hiw")}>
-                  Voir comment ça marche
+                  {l.hero.cta2}
                 </button>
               </div>
               <div className="ld-hero-trust">
                 <span className="ld-trust-dot" />
-                <span className="ld-trust-text">2 400+ conseillers</span>
+                <span className="ld-trust-text">{l.hero.trust1}</span>
                 <span className="ld-trust-sep">·</span>
-                <span className="ld-trust-text">18 000 emails/jour</span>
+                <span className="ld-trust-text">{l.hero.trust2}</span>
                 <span className="ld-trust-sep">·</span>
-                <span className="ld-trust-text">100% RGPD</span>
+                <span className="ld-trust-text">{l.hero.trust3}</span>
               </div>
             </div>
 
-            {/* Right: floating mock */}
             <div className="ld-hero-right">
               <DashboardMock />
             </div>
@@ -671,20 +520,21 @@ export default function LandingPage() {
 
           <div className="ld-scroll">
             <ChevronDown size={22} />
+            <span>{l.scroll}</span>
           </div>
         </section>
 
         {/* ══ PARTNERS ══ */}
         <div className="ld-partners">
           <div className="ld-partners-in">
-            <span className="ld-partner-label">Propulsé par</span>
+            <span className="ld-partner-label">{l.partners}</span>
             <div className="ld-partner-badges">
               {[
                 { emoji: "🧠", name: "Gemini AI" },
                 { emoji: "⚡", name: "Groq" },
                 { emoji: "🔐", name: "Laravel 12" },
                 { emoji: "▲", name: "Next.js 16" },
-                { emoji: "🛡", name: "RGPD Conforme" },
+                { emoji: "🛡", name: "RGPD" },
               ].map(b => (
                 <div key={b.name} className="ld-partner-badge">
                   <span>{b.emoji}</span> {b.name}
@@ -697,11 +547,11 @@ export default function LandingPage() {
         {/* ══ STATS ══ */}
         <section className="ld-stats" ref={statsRef as React.RefObject<HTMLElement>}>
           <div className="ld-stats-in">
-            {STATS.map(s => (
-              <div key={s.label} className="ld-stat">
+            {l.stats.map((s, i) => (
+              <div key={i} className="ld-stat">
                 <div className="ld-stat-val">
                   {s.prefix && <span className="acc">{s.prefix}</span>}
-                  <Counter end={s.end} suffix={s.suffix} active={statsVisible} />
+                  <Counter end={STATS_DATA[i].end} suffix={STATS_DATA[i].suffix} active={statsVisible} />
                 </div>
                 <div className="ld-stat-lbl">{s.label}</div>
               </div>
@@ -712,26 +562,26 @@ export default function LandingPage() {
         {/* ══ HOW IT WORKS ══ */}
         <section className="ld-hiw" id="hiw">
           <div className="ld-hiw-in">
-            <span className="ld-section-tag">Comment ça marche</span>
-            <h2 className="ld-section-h2">De zéro à résolu en quelques secondes</h2>
-            <p className="ld-section-sub">
-              PostSmart IA s'intègre naturellement dans votre journée. Trois cas d'usage,
-              un seul outil, aucune formation requise.
-            </p>
+            <span className="ld-section-tag">{l.hiw.tag}</span>
+            <h2 className="ld-section-h2">{l.hiw.h2}</h2>
+            <p className="ld-section-sub">{l.hiw.sub}</p>
             <div className="ld-steps">
-              {STEPS.map(s => (
-                <div key={s.n} className="ld-step">
-                  <div className="ld-step-n">{s.n}</div>
-                  <div className="ld-step-icon" style={{ background: s.color, border: `1px solid ${s.border}` }}>
-                    {s.icon}
+              {l.hiw.steps.map((s, i) => {
+                const { color, border, icon } = STEP_COLORS[i]
+                return (
+                  <div key={i} className="ld-step">
+                    <div className="ld-step-n">0{i + 1}</div>
+                    <div className="ld-step-icon" style={{ background: color, border: `1px solid ${border}` }}>
+                      {icon}
+                    </div>
+                    <h3 className="ld-step-title">{s.title}</h3>
+                    <p className="ld-step-desc">{s.desc}</p>
+                    <span className="ld-step-tag" style={{ background: color, borderColor: border, color: "#374151" }}>
+                      <Zap size={10} /> {s.tag}
+                    </span>
                   </div>
-                  <h3 className="ld-step-title">{s.title}</h3>
-                  <p className="ld-step-desc">{s.desc}</p>
-                  <span className="ld-step-tag" style={{ background: s.color, borderColor: s.border, color: "#374151" }}>
-                    <Zap size={10} /> {s.tag}
-                  </span>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </section>
@@ -739,27 +589,28 @@ export default function LandingPage() {
         {/* ══ FEATURES ══ */}
         <section className="ld-feats" id="feats">
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            <span className="ld-section-tag">Fonctionnalités</span>
-            <h2 className="ld-section-h2">Trois modules, un seul outil</h2>
-            <p className="ld-section-sub" style={{ marginBottom: "3rem" }}>
-              Chaque module est pensé pour le quotidien du conseiller La Poste.
-            </p>
+            <span className="ld-section-tag">{l.feats.tag}</span>
+            <h2 className="ld-section-h2">{l.feats.h2}</h2>
+            <p className="ld-section-sub" style={{ marginBottom: "3rem" }}>{l.feats.sub}</p>
             <div className="ld-feats-grid">
-              {FEATURES.map(f => (
-                <div key={f.title} className="ld-feat-card">
-                  <div className="ld-feat-ico" style={{ background: f.bg }}>{f.icon}</div>
-                  <h3 className="ld-feat-title">{f.title}</h3>
-                  <p className="ld-feat-desc">{f.desc}</p>
-                  <ul className="ld-feat-bullets">
-                    {f.bullets.map(b => (
-                      <li key={b} className="ld-feat-bullet">
-                        <Check size={13} color="#FFCC00" strokeWidth={3} style={{ marginTop: 3, flexShrink: 0 }} />
-                        {b}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+              {l.feats.items.map((f, i) => {
+                const { icon, bg } = FEAT_ICONS[i]
+                return (
+                  <div key={i} className="ld-feat-card">
+                    <div className="ld-feat-ico" style={{ background: bg }}>{icon}</div>
+                    <h3 className="ld-feat-title">{f.title}</h3>
+                    <p className="ld-feat-desc">{f.desc}</p>
+                    <ul className="ld-feat-bullets">
+                      {f.bullets.map((b, j) => (
+                        <li key={j} className="ld-feat-bullet">
+                          <Check size={13} color="#FFCC00" strokeWidth={3} style={{ marginTop: 3, flexShrink: 0 }} />
+                          {b}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )
+              })}
             </div>
           </div>
         </section>
@@ -767,14 +618,14 @@ export default function LandingPage() {
         {/* ══ TECH ══ */}
         <section className="ld-tech">
           <div className="ld-tech-in">
-            <p className="ld-tech-lbl">Stack technologique</p>
+            <p className="ld-tech-lbl">{l.tech}</p>
             <div className="ld-tech-badges">
-              {TECH.map(t => (
-                <div key={t.label} className="ld-tech-badge">
-                  <span className="ld-tech-emoji">{t.emoji}</span>
+              {TECH.map(item => (
+                <div key={item.label} className="ld-tech-badge">
+                  <span className="ld-tech-emoji">{item.emoji}</span>
                   <div>
-                    <div className="ld-tech-name">{t.label}</div>
-                    <div className="ld-tech-sub">{t.sub}</div>
+                    <div className="ld-tech-name">{item.label}</div>
+                    <div className="ld-tech-sub">{item.sub}</div>
                   </div>
                 </div>
               ))}
@@ -785,23 +636,21 @@ export default function LandingPage() {
         {/* ══ TESTIMONIALS ══ */}
         <section className="ld-testis" id="testis">
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-            <span className="ld-section-tag">Témoignages</span>
-            <h2 className="ld-section-h2" style={{ marginBottom: "0.75rem" }}>Ce que disent nos équipes</h2>
-            <p className="ld-section-sub" style={{ marginBottom: "3rem" }}>
-              Des conseillers et managers La Poste qui utilisent PostSmart IA au quotidien.
-            </p>
+            <span className="ld-section-tag">{l.testis.tag}</span>
+            <h2 className="ld-section-h2" style={{ marginBottom: "0.75rem" }}>{l.testis.h2}</h2>
+            <p className="ld-section-sub" style={{ marginBottom: "3rem" }}>{l.testis.sub}</p>
             <div className="ld-testi-grid">
-              {TESTIMONIALS.map(t => (
-                <div key={t.name} className="ld-testi-card">
+              {TESTIMONIALS.map(item => (
+                <div key={item.name} className="ld-testi-card">
                   <div className="ld-stars">
                     {[1,2,3,4,5].map(i => <Star key={i} size={13} fill="#FFCC00" color="#FFCC00" />)}
                   </div>
-                  <p className="ld-testi-quote">{t.quote}</p>
+                  <p className="ld-testi-quote">{item.quote}</p>
                   <div className="ld-testi-footer">
-                    <div className="ld-testi-av" style={{ background: t.bg }}>{t.initials}</div>
+                    <div className="ld-testi-av" style={{ background: item.bg }}>{item.initials}</div>
                     <div>
-                      <div className="ld-testi-name">{t.name}</div>
-                      <div className="ld-testi-role">{t.role}</div>
+                      <div className="ld-testi-name">{item.name}</div>
+                      <div className="ld-testi-role">{item.role}</div>
                     </div>
                   </div>
                 </div>
@@ -815,19 +664,16 @@ export default function LandingPage() {
           <div className="ld-cta-orb" />
           <div className="ld-cta-in">
             <h2 className="ld-cta-h2">
-              Prêt à transformer<br />
-              <span style={{ color: "#FFCC00" }}>chaque échange client ?</span>
+              {l.cta.h2a}<br />
+              <span style={{ color: "#FFCC00" }}>{l.cta.h2b}</span>
             </h2>
-            <p className="ld-cta-sub">
-              Rejoignez les conseillers La Poste qui font confiance à PostSmart IA
-              pour répondre plus vite, mieux et sans stress.
-            </p>
+            <p className="ld-cta-sub">{l.cta.sub}</p>
             <div className="ld-cta-btns">
               <Link href="/login" className="ld-btn-primary">
-                Commencer maintenant <ArrowRight size={15} />
+                {l.cta.btn1} <ArrowRight size={15} />
               </Link>
               <button className="ld-btn-secondary" onClick={() => scrollTo("hiw")}>
-                En savoir plus
+                {l.cta.btn2}
               </button>
             </div>
           </div>
@@ -843,16 +689,26 @@ export default function LandingPage() {
               <span className="ld-footer-name">Post<span className="y">Smart IA</span></span>
             </Link>
             <div className="ld-footer-links">
-              <button type="button" className="ld-footer-link">Mentions légales</button>
-              <button type="button" className="ld-footer-link">Confidentialité</button>
-              <button type="button" className="ld-footer-link">RGPD</button>
-              <Link href="/login" className="ld-footer-link">Connexion</Link>
+              <button type="button" className="ld-footer-link">{l.footer.legal}</button>
+              <button type="button" className="ld-footer-link">{l.footer.privacy}</button>
+              <button type="button" className="ld-footer-link">{l.footer.rgpd}</button>
+              <Link href="/login" className="ld-footer-link">{l.footer.login}</Link>
             </div>
-            <span className="ld-footer-copy">© 2026 PostSmart IA — La Poste × EY × Microsoft</span>
+            <span className="ld-footer-copy">{l.footer.copy}</span>
           </div>
         </footer>
 
       </div>
     </>
+  )
+}
+
+// ── Page wrapper ──────────────────────────────────────────────────────────────
+
+export default function LandingPage() {
+  return (
+    <LanguageProvider>
+      <LandingContent />
+    </LanguageProvider>
   )
 }
