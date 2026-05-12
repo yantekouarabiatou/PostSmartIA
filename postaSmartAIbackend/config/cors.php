@@ -14,16 +14,20 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => [
+    'allowed_origins' => array_filter([
         'http://localhost:5173',
         'http://localhost:3000',
+        'http://localhost:8001',
         'http://127.0.0.1:5173',
         'http://127.0.0.1:3000',
-        // Add your production frontend URL here
-        // 'https://postsmartai.com',
-    ],
+        env('FRONTEND_URL'),          // production : https://xxx.vercel.app
+    ]),
 
-    'allowed_origins_patterns' => [],
+    // Accepte tous les sous-domaines vercel.app et railway.app (previews/branches)
+    'allowed_origins_patterns' => [
+        '#^https://[a-z0-9\-]+\.vercel\.app$#',
+        '#^https://[a-z0-9\-]+\.railway\.app$#',
+    ],
 
     'allowed_headers' => ['*'],
 

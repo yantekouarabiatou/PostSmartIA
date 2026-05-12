@@ -1,4 +1,9 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api'
+// En production (Vercel) : passe par le proxy /api/backend/* → Railway (pas de CORS)
+// En local : appel direct au backend Laravel via NEXT_PUBLIC_API_URL
+const BASE_URL =
+  typeof window !== 'undefined' && process.env.NODE_ENV === 'production'
+    ? '/api/backend'
+    : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001/api')
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null
