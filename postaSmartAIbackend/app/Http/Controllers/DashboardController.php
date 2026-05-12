@@ -79,23 +79,12 @@ class DashboardController extends Controller
         $pendingEmails = EmailInbox::whereNotIn('status', ['resolved', 'archived'])->count();
         $unreadEmails  = EmailInbox::where('is_read', false)->count();
 
-        // Score qualité moyen
+        // Score qualité moyen — ai_quality_score est un entier (0-100), pas un objet JSON
         $allScores = EmailInbox::whereNotNull('ai_quality_score')
-            ->where('ai_quality_score', '!=', 'null')
-            ->where('ai_quality_score', '!=', '{}')
-            ->get()
-            ->map(function ($e) {
-                try {
-                    $s = is_array($e->ai_quality_score)
-                        ? $e->ai_quality_score
-                        : json_decode($e->ai_quality_score, true);
-                    return $s['overall'] ?? $s['global'] ?? null;
-                } catch (\Exception $ex) {
-                    return null;
-                }
-            })->filter();
+            ->where('ai_quality_score', '>', 0)
+            ->pluck('ai_quality_score');
 
-        $avgScore   = $allScores->count() > 0 ? round($allScores->average()) : 0;
+        $avgScore   = $allScores->count() > 0 ? (int) round($allScores->average()) : 0;
         $scoreCount = $allScores->count();
 
         $callsTotal = CallReport::where('user_id', $user->id)->count();
@@ -161,19 +150,10 @@ class DashboardController extends Controller
 
                     $scores = EmailInbox::where('validated_by', $u->id)
                         ->whereNotNull('ai_quality_score')
-                        ->get()
-                        ->map(function ($e) {
-                            try {
-                                $s = is_array($e->ai_quality_score)
-                                    ? $e->ai_quality_score
-                                    : json_decode($e->ai_quality_score, true);
-                                return $s['overall'] ?? null;
-                            } catch (\Exception $ex) {
-                                return null;
-                            }
-                        })->filter();
+                        ->where('ai_quality_score', '>', 0)
+                        ->pluck('ai_quality_score');
 
-                    $avgScore   = $scores->count() > 0 ? round($scores->average()) : 0;
+                    $avgScore = $scores->count() > 0 ? (int) round($scores->average()) : 0;
                     $callsCount = CallReport::where('user_id', $u->id)->count();
 
                     $initial1 = strtoupper(substr($u->first_name ?? '', 0, 1));
