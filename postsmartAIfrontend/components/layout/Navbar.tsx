@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { useRouter, usePathname } from "next/navigation"
 import { api } from "@/lib/api"
+import { useI18n, LangSwitcher } from "@/lib/i18n"
+import GlobalSearch from "@/components/ui/global-search"
 
 interface AuthUser {
   id: number
@@ -23,35 +25,18 @@ interface Notification {
   created_at: string
 }
 
-const ROLE_LABEL: Record<string, string> = {
-  conseiller: "Conseiller",
-  manager: "Manager",
-  admin: "Administrateur",
-}
-
 const ROLE_COLOR: Record<string, string> = {
   conseiller: "#0066CC",
-  manager: "#854F0B",
-  admin: "#993C1D",
+  manager:    "#854F0B",
+  admin:      "#993C1D",
 }
 
-const NAV_LINKS = [
-  { label: "Tableau de bord", path: "/dashboard" },
-  { label: "Mails entrants",  path: "/dashboard/incoming" },
-  { label: "Générer un email", path: "/dashboard/generate" },
-  { label: "Historique",      path: "/dashboard/history" },
-]
-
-function getGreeting() {
-  const h = new Date().getHours()
-  if (h < 12) return "Bonjour"
-  if (h < 18) return "Bon après-midi"
-  return "Bonsoir"
-}
+// ── Navbar ────────────────────────────────────────────────────────────────────
 
 export default function Navbar() {
   const router   = useRouter()
   const pathname = usePathname()
+  const { t }    = useI18n()
 
   const [user, setUser]               = useState<AuthUser | null>(null)
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -102,7 +87,7 @@ export default function Navbar() {
     localStorage.removeItem("auth_token")
     localStorage.removeItem("auth_user")
     localStorage.removeItem("remember_me")
-    router.push("/login")
+    router.push("/")
   }
 
   const initials = user
@@ -110,7 +95,22 @@ export default function Navbar() {
     : "?"
 
   const isManagerOrAdmin = user?.role === "manager" || user?.role === "admin"
-  const isAdmin = user?.role === "admin"
+  const isAdmin          = user?.role === "admin"
+
+  function getGreeting() {
+    const h = new Date().getHours()
+    if (h < 12) return t.greeting.morning
+    if (h < 18) return t.greeting.afternoon
+    return t.greeting.evening
+  }
+
+  const NAV_LINKS = [
+    { label: t.nav.dashboard, path: "/dashboard" },
+    { label: t.nav.incoming,  path: "/dashboard/incoming" },
+    { label: t.nav.forms,     path: "/dashboard/forms" },
+    { label: t.nav.generate,  path: "/dashboard/generate" },
+    { label: t.nav.history,   path: "/dashboard/history" },
+  ]
 
   return (
     <nav style={{
@@ -154,8 +154,14 @@ export default function Navbar() {
         </Link>
       ))}
 
+      {/* Global search */}
+      <GlobalSearch />
+
       {/* Spacer */}
       <div style={{ flex: 1 }} />
+
+      {/* Language switcher */}
+      <LangSwitcher />
 
       {/* Greeting */}
       <span style={{ color: "rgba(255,255,255,0.6)", fontSize: "13px", whiteSpace: "nowrap" }}>
@@ -200,20 +206,21 @@ export default function Navbar() {
               display: "flex", justifyContent: "space-between", alignItems: "center",
             }}>
               <span style={{ fontWeight: 600, fontSize: "14px", color: "#00205B" }}>
-                Notifications {unreadCount > 0 && <span style={{ color: "#0066CC" }}>({unreadCount})</span>}
+                {t.notifications.title}{" "}
+                {unreadCount > 0 && <span style={{ color: "#0066CC" }}>({unreadCount})</span>}
               </span>
               {unreadCount > 0 && (
                 <button onClick={markAllRead} style={{
                   background: "none", border: "none", color: "#0066CC",
                   fontSize: "12px", cursor: "pointer",
                 }}>
-                  Tout marquer lu
+                  {t.notifications.markAllRead}
                 </button>
               )}
             </div>
             {notifications.length === 0 ? (
               <div style={{ padding: "24px", textAlign: "center", color: "#9CA3AF", fontSize: "13px" }}>
-                Aucune notification
+                {t.notifications.empty}
               </div>
             ) : notifications.map(n => (
               <div key={n.id} style={{
@@ -233,7 +240,7 @@ export default function Navbar() {
                 onClick={() => setShowNotifs(false)}
                 style={{ color: "#0066CC", fontSize: "12px", textDecoration: "none" }}
               >
-                Voir toutes les notifications →
+                {t.notifications.viewAll}
               </Link>
             </div>
           </div>
@@ -273,7 +280,6 @@ export default function Navbar() {
             boxShadow: "0 8px 32px rgba(0,0,0,0.18)", border: "1px solid #E5E7EB",
             overflow: "hidden", zIndex: 1001,
           }}>
-            {/* User info */}
             <div style={{ padding: "16px", borderBottom: "1px solid #F0F0F0", background: "#F8FAFF" }}>
               <div style={{
                 width: "40px", height: "40px", borderRadius: "50%",
@@ -292,15 +298,17 @@ export default function Navbar() {
                   fontWeight: 600, color: "#fff",
                   background: ROLE_COLOR[user.role] ?? "#0066CC",
                 }}>
-                  {ROLE_LABEL[user.role] ?? user.role}
+                  {t.roles[user.role as keyof typeof t.roles] ?? user.role}
                 </span>
               )}
             </div>
 
-            {/* Menu items */}
             {[
-              ...(isManagerOrAdmin ? [{ label: "👥 Gestion utilisateurs", path: "/dashboard/users" }] : []),
-              ...(isAdmin ? [{ label: "🔐 Journaux d'activité", path: "/dashboard/logs" }] : []),
+              { label: t.profile.myProfile, path: "/dashboard/profile" },
+              { label: t.profile.home,      path: "/" },
+              { label: t.profile.loginPage, path: "/login" },
+              ...(isManagerOrAdmin ? [{ label: t.profile.users, path: "/dashboard/users" }] : []),
+              ...(isAdmin ? [{ label: t.profile.logs, path: "/dashboard/logs" }] : []),
             ].map(item => (
               <Link
                 key={item.path}
@@ -324,7 +332,7 @@ export default function Navbar() {
                 color: "#DC2626", cursor: "pointer",
               }}
             >
-              🚪 Se déconnecter
+              {t.profile.logout}
             </button>
           </div>
         )}

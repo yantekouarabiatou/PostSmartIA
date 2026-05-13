@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import AppSelect, { type SelectOption } from "@/components/ui/app-select"
 import AppDataTable from "@/components/ui/AppDataTable"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
@@ -346,30 +346,30 @@ export default function UsersPage() {
                 className="pl-9 h-9"
               />
             </div>
-            <div className="min-w-[160px]">
-              <Select value={roleFilter} onValueChange={v => { setRoleFilter(v); setPage(1) }}>
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Tous les rôles" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous les rôles</SelectItem>
-                  <SelectItem value="conseiller">Conseiller</SelectItem>
-                  <SelectItem value="manager">Manager</SelectItem>
-                  <SelectItem value="admin">Administrateur</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="min-w-[180px]">
+              <AppSelect
+                options={[
+                  { value: "all",        label: "Tous les rôles" },
+                  { value: "conseiller", label: "👤 Conseiller" },
+                  { value: "manager",    label: "👥 Manager" },
+                  { value: "admin",      label: "🔐 Administrateur" },
+                ]}
+                value={{ value: roleFilter, label: roleFilter === "all" ? "Tous les rôles" : roleFilter }}
+                onChange={(opt) => { setRoleFilter((opt as SelectOption | null)?.value ?? "all"); setPage(1) }}
+                isSearchable={false}
+              />
             </div>
-            <div className="min-w-[160px]">
-              <Select value={statusFilter} onValueChange={v => { setStatusFilter(v); setPage(1) }}>
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Tous les statuts" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous les statuts</SelectItem>
-                  <SelectItem value="active">Actif</SelectItem>
-                  <SelectItem value="inactive">Inactif</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="min-w-[180px]">
+              <AppSelect
+                options={[
+                  { value: "all",      label: "Tous les statuts" },
+                  { value: "active",   label: "🟢 Actif" },
+                  { value: "inactive", label: "⚫ Inactif" },
+                ]}
+                value={{ value: statusFilter, label: statusFilter === "all" ? "Tous les statuts" : statusFilter }}
+                onChange={(opt) => { setStatusFilter((opt as SelectOption | null)?.value ?? "all"); setPage(1) }}
+                isSearchable={false}
+              />
             </div>
           </div>
         </CardContent>
@@ -443,14 +443,16 @@ export default function UsersPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Rôle <span className="text-destructive">*</span></label>
-                  <Select value={form.role} onValueChange={v => setForm(f => ({ ...f, role: v }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="conseiller">Conseiller</SelectItem>
-                      <SelectItem value="manager">Manager</SelectItem>
-                      <SelectItem value="admin">Administrateur</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <AppSelect
+                    options={[
+                      { value: "conseiller", label: "👤 Conseiller" },
+                      { value: "manager",    label: "👥 Manager" },
+                      { value: "admin",      label: "🔐 Administrateur" },
+                    ]}
+                    value={{ value: form.role, label: ROLE_CFG[form.role]?.label ?? form.role }}
+                    onChange={(opt) => setForm(f => ({ ...f, role: (opt as SelectOption | null)?.value ?? f.role }))}
+                    isSearchable={false}
+                  />
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium">Équipe</label>

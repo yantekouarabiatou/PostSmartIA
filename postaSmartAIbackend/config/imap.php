@@ -11,7 +11,7 @@ return [
             'password'      => env('IMAP_PASSWORD', ''),
             'protocol'      => 'imap',
             'options'       => [
-                'sequence'    => \Webklex\PHPIMAP\IMAP::ST_UID,
+                'sequence'    => 1, // Webklex\PHPIMAP\IMAP::ST_UID = 1 (package retiré)
                 'fetch_flags' => true,
                 'open'        => [],
             ],

@@ -26,13 +26,17 @@ class ActivityLogService
         ]);
     }
 
-    public static function logWithoutAuth(string $action, string $description): ActivityLog
-    {
+    public static function logWithoutAuth(
+        string $action,
+        string $description,
+        ?string $modelType = null,
+        ?int $modelId = null
+    ): ActivityLog {
         return ActivityLog::create([
             'user_id'     => null,
             'action'      => $action,
-            'model_type'  => null,
-            'model_id'    => null,
+            'model_type'  => $modelType,
+            'model_id'    => $modelId,
             'description' => $description,
             'ip_address'  => Request::ip(),
             'user_agent'  => Request::userAgent(),

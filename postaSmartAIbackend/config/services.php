@@ -2,24 +2,12 @@
 
 return [
 
-    /*
-    |--------------------------------------------------------------------------
-    | Third Party Services
-    |--------------------------------------------------------------------------
-    |
-    | This file is for storing the credentials for third party services such
-    | as Mailgun, Postmark, AWS and more. This file provides the de facto
-    | location for this type of information, allowing packages to have
-    | a conventional file to locate the various service credentials.
-    |
-    */
-
     'postmark' => [
         'token' => env('POSTMARK_TOKEN'),
     ],
 
     'ses' => [
-        'key' => env('AWS_ACCESS_KEY_ID'),
+        'key'    => env('AWS_ACCESS_KEY_ID'),
         'secret' => env('AWS_SECRET_ACCESS_KEY'),
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
@@ -31,13 +19,31 @@ return [
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
-            'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
+            'channel'              => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Providers IA — sélection via AI_PROVIDER dans .env
+    |--------------------------------------------------------------------------
+    |
+    | Valeurs possibles : gemini | mistral | groq | claude
+    |
+    | Recommandation production La Poste :
+    |   AI_PROVIDER=mistral → déployé sur OVHcloud France (eu-west/Paris)
+    |   Données traitées sur territoire français, hors CLOUD Act américain.
+    |   Documentation : https://docs.mistral.ai/api/
+    |
+    */
+
+    'ai' => [
+        'provider' => env('AI_PROVIDER', 'gemini'),
     ],
 
     'anthropic' => [
         'key'   => env('ANTHROPIC_API_KEY'),
-        'model' => env('ANTHROPIC_MODEL', 'claude-sonnet-4-20250514'),
+        'model' => env('ANTHROPIC_MODEL', 'claude-sonnet-4-6-20251001'),
     ],
 
     'groq' => [
@@ -50,6 +56,22 @@ return [
         'api_key'  => env('GEMINI_API_KEY'),
         'model'    => env('GEMINI_MODEL', 'gemini-2.0-flash'),
         'base_url' => env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Mistral AI — provider souverain recommandé pour La Poste
+    |--------------------------------------------------------------------------
+    |
+    | API compatible OpenAI. En production :
+    |   - Utiliser le endpoint OVHcloud : https://mistral.ai/fr/news/ovhcloud
+    |   - Ou l'endpoint Scaleway : https://www.scaleway.com/fr/ia-generative/
+    |
+    */
+    'mistral' => [
+        'api_key'  => env('MISTRAL_API_KEY'),
+        'model'    => env('MISTRAL_MODEL', 'mistral-large-latest'),
+        'base_url' => env('MISTRAL_BASE_URL', 'https://api.mistral.ai/v1'),
     ],
 
 ];

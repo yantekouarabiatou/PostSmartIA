@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import DataTable, { type TableColumn, type TableProps } from "react-data-table-component"
 
 const customStyles = {
@@ -57,15 +57,8 @@ export default function AppDataTable<T extends object>({
 }: AppDataTableProps<T>) {
   const [search, setSearch] = useState("")
 
-  // react-data-table-component v7 passes `allowOverflow` to a DOM <div> — suppress the known warning
-  useEffect(() => {
-    const _error = console.error
-    console.error = (...args: unknown[]) => {
-      if (typeof args[0] === "string" && args[0].includes("allowOverflow")) return
-      _error(...args)
-    }
-    return () => { console.error = _error }
-  }, [])
+  // Strip `allowOverflow` so react-data-table-component doesn't forward it to a DOM <div>
+  const safeColumns = columns.map(({ allowOverflow: _, ...col }) => col as TableColumn<T>)
 
   const filtered = searchable && search.trim()
     ? data.filter(row =>
@@ -113,7 +106,7 @@ export default function AppDataTable<T extends object>({
         </div>
       )}
       <DataTable
-        columns={columns}
+        columns={safeColumns}
         data={filtered}
         progressPending={loading}
         progressComponent={

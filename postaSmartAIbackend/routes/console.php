@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 // Récupération des mails IMAP toutes les 5 minutes
 Schedule::command('emails:fetch')->everyFiveMinutes();
+
+// SLA escalades — vérifie toutes les 30 min les escalades non acquittées depuis >2h
+Schedule::command('escalation:check-sla')->everyThirtyMinutes();
