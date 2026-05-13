@@ -55,6 +55,10 @@ interface Analysis {
   main_request: string
   key_points: string[]
   suggested_actions: string[]
+  detected_language?: string
+  language_name?: string
+  is_foreign_language?: boolean
+  french_translation?: string | null
 }
 
 interface AiResult {
@@ -295,6 +299,39 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
       <div style={{ height: 6, borderRadius: 3, background: "#E5E7EB" }}>
         <div style={{ height: "100%", borderRadius: 3, width: `${value}%`, background: color, transition: "width .4s" }} />
       </div>
+    </div>
+  )
+}
+
+// ── TranslationPanel ──────────────────────────────────────────────────────────
+
+function TranslationPanel({ languageName, translation }: { languageName: string; translation: string }) {
+  const [open, setOpen] = useState(true)
+
+  return (
+    <div style={{ margin: "0 16px 12px", borderRadius: 10, border: "1px solid #FDE68A", overflow: "hidden" }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        style={{
+          width: "100%", padding: "10px 16px", background: "#FFFBEB",
+          border: "none", cursor: "pointer", display: "flex",
+          justifyContent: "space-between", alignItems: "center",
+          fontSize: 13, fontWeight: 600, color: "#92400E",
+        }}
+      >
+        <span>🌍 Traduction en français — mail reçu en {languageName}</span>
+        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+      </button>
+      {open && (
+        <div style={{ padding: "14px 16px", background: "#FFFEF0" }}>
+          <pre style={{
+            margin: 0, fontFamily: "inherit", fontSize: 14, lineHeight: 1.7,
+            color: "#374151", whiteSpace: "pre-wrap", wordBreak: "break-word",
+          }}>
+            {translation}
+          </pre>
+        </div>
+      )}
     </div>
   )
 }
@@ -760,6 +797,11 @@ export default function IncomingPage() {
               {SERVICE_LABEL[selected.ai_service_type] ?? selected.ai_service_type}
             </span>
           )}
+          {aiResult?.analysis?.is_foreign_language && aiResult.analysis.language_name && (
+            <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: "#FEF3C7", color: "#92400E", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+              🌍 {aiResult.analysis.language_name}
+            </span>
+          )}
           <span style={{ fontSize: 12, color: "#6B7280" }}>
             {selected.source === "form" ? "📋 Formulaire" : "📧 Email entrant"}
           </span>
@@ -796,6 +838,14 @@ export default function IncomingPage() {
           {selected.body_text}
         </pre>
       </div>
+
+      {/* Traduction française — visible uniquement si mail étranger */}
+      {aiResult?.analysis?.is_foreign_language && aiResult.analysis.french_translation && (
+        <TranslationPanel
+          languageName={aiResult.analysis.language_name ?? aiResult.analysis.detected_language ?? ""}
+          translation={aiResult.analysis.french_translation}
+        />
+      )}
 
       {/* Resolved: show validated response */}
       {selected.status === "resolved" && selected.validated_response && (

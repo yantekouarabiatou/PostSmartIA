@@ -84,9 +84,10 @@ class EmailInboxController extends Controller
         if (!$email) return ApiResponse::notFound('Mail introuvable');
 
         try {
-            $content  = $email->body_text ?: strip_tags($email->body_html ?? '');
-            $analysis = $this->withAiFallback(fn($ai) => $ai->analyzeEmail($content));
-            $response = $this->withAiFallback(fn($ai) => $ai->generateEmailResponse($content, $analysis['service_type'] ?? 'autre'));
+            $content          = $email->body_text ?: strip_tags($email->body_html ?? '');
+            $analysis         = $this->withAiFallback(fn($ai) => $ai->analyzeEmail($content));
+            $detectedLanguage = $analysis['detected_language'] ?? 'fr';
+            $response         = $this->withAiFallback(fn($ai) => $ai->generateEmailResponse($content, $analysis['service_type'] ?? 'autre', $detectedLanguage));
 
             $qualityScore = $response['quality_score'] ?? null;
 
@@ -113,6 +114,23 @@ class EmailInboxController extends Controller
                     'high'      => 'high',
                     default     => $priority,
                 };
+            }
+
+            // Escalade automatique si langue non latine (traitement spécialisé requis)
+            $nonLatinLanguages = ['zh', 'ja', 'ko', 'ar', 'he', 'fa', 'ru', 'uk', 'th', 'hi', 'bn', 'ta'];
+            if (($analysis['is_foreign_language'] ?? false) && in_array($detectedLanguage, $nonLatinLanguages)) {
+                if (!($escalation['should_escalate'] ?? false)) {
+                    $escalation['should_escalate']     = true;
+                    $escalation['urgency_level']       = $escalation['urgency_level'] ?? 'normal';
+                    $escalation['signals_detected'][]  = [
+                        'type'        => 'langue_non_latine',
+                        'description' => 'Mail reçu dans une langue non latine — traitement spécialisé recommandé',
+                        'quote'       => 'Langue détectée : ' . ($analysis['language_name'] ?? $detectedLanguage),
+                    ];
+                    $escalation['recommended_target']       = $escalation['recommended_target'] ?? 'manager';
+                    $escalation['recommended_target_label'] = $escalation['recommended_target_label'] ?? 'Manager';
+                    $escalation['explanation']              = 'Mail en langue non latine (' . ($analysis['language_name'] ?? $detectedLanguage) . '). Vérification humaine recommandée avant envoi.';
+                }
             }
 
             // Notification manager si menace légale ou urgence immédiate

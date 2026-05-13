@@ -6,7 +6,7 @@ interface AiServiceInterface
 {
     public function analyzeEmail(string $emailContent): array;
 
-    public function generateEmailResponse(string $emailContent, string $serviceType = ''): array;
+    public function generateEmailResponse(string $emailContent, string $serviceType = '', string $detectedLanguage = 'fr'): array;
 
     public function improveEmail(string $content): array;
 

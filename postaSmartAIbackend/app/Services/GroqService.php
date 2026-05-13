@@ -139,12 +139,16 @@ class GroqService implements AiServiceInterface
         ['text' => $anonymized] = $this->filter->anonymize($emailContent);
 
         $prompt = "Analyse ce mail client de La Poste et retourne un JSON avec :\n" .
+            "- detected_language: code ISO 639-1 de la langue détectée (ex: \"fr\", \"en\", \"es\")\n" .
+            "- language_name: nom de la langue en français (ex: \"Français\", \"Anglais\", \"Espagnol\")\n" .
+            "- is_foreign_language: true si la langue n'est pas le français, false sinon\n" .
+            "- french_translation: traduction complète et fidèle en français si is_foreign_language=true, null sinon\n" .
             "- service_type: reclamation|suivi_colis|info_offre|escalade_mediateur|handicap|formulaire|autre\n" .
             "- urgency: haute|normale|faible\n" .
             "- tone: agressif|neutre|positif\n" .
             "- client_name: null ou nom\n" .
             "- dossier_number: null ou numéro\n" .
-            "- main_request: résumé en une phrase\n" .
+            "- main_request: résumé en une phrase (toujours en français)\n" .
             "- key_points: [\"point1\"]\n" .
             "- suggested_actions: [\"action1\"]\n\n" .
             "Mail : {$anonymized}";
@@ -152,12 +156,16 @@ class GroqService implements AiServiceInterface
         return $this->completeJson($prompt);
     }
 
-    public function generateEmailResponse(string $emailContent, string $serviceType = ''): array
+    public function generateEmailResponse(string $emailContent, string $serviceType = '', string $detectedLanguage = 'fr'): array
     {
         ['text' => $anonymized, 'map' => $map] = $this->filter->anonymize($emailContent);
 
+        $languageInstruction = ($detectedLanguage && $detectedLanguage !== 'fr')
+            ? "\nIMPORTANT : Réponds directement dans la langue du client (code ISO: {$detectedLanguage}). Le champ body doit être entièrement dans cette langue.\n"
+            : '';
+
         $prompt = "Génère une réponse professionnelle et empathique à ce mail client de La Poste.\n" .
-            "Type de service: {$serviceType}\n\n" .
+            "Type de service: {$serviceType}{$languageInstruction}\n\n" .
             "Mail du client:\n{$anonymized}\n\n" .
             "Retourne un JSON avec:\n" .
             "- subject: objet du mail\n" .

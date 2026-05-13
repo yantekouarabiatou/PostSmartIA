@@ -94,16 +94,28 @@ PROMPT;
         ['text' => $anonymized] = $this->filter->anonymize($emailContent);
 
         return $this->completeJson(
-            "Analyse ce mail client La Poste. Retourne un JSON avec : service_type (reclamation|suivi_colis|info_offre|escalade_mediateur|handicap|formulaire|autre), urgency (haute|normale|faible), tone (agressif|neutre|positif), client_name (null ou nom), dossier_number (null ou numéro), main_request (résumé), key_points (array), suggested_actions (array).\n\nMail : {$anonymized}"
+            "Analyse ce mail client La Poste. Retourne un JSON avec : " .
+            "detected_language (code ISO 639-1, ex: \"fr\", \"en\", \"es\"), " .
+            "language_name (nom en français, ex: \"Français\", \"Anglais\"), " .
+            "is_foreign_language (bool, true si langue != français), " .
+            "french_translation (traduction complète en français si is_foreign_language=true, null sinon), " .
+            "service_type (reclamation|suivi_colis|info_offre|escalade_mediateur|handicap|formulaire|autre), " .
+            "urgency (haute|normale|faible), tone (agressif|neutre|positif), client_name (null ou nom), " .
+            "dossier_number (null ou numéro), main_request (résumé toujours en français), " .
+            "key_points (array en français), suggested_actions (array en français).\n\nMail : {$anonymized}"
         );
     }
 
-    public function generateEmailResponse(string $emailContent, string $serviceType = ''): array
+    public function generateEmailResponse(string $emailContent, string $serviceType = '', string $detectedLanguage = 'fr'): array
     {
         ['text' => $anonymized, 'map' => $map] = $this->filter->anonymize($emailContent);
 
+        $languageInstruction = ($detectedLanguage && $detectedLanguage !== 'fr')
+            ? "\nIMPORTANT : Ce client a écrit dans une autre langue (code: {$detectedLanguage}). Génère la réponse entièrement dans cette langue."
+            : '';
+
         $result = $this->completeJson(
-            "Génère une réponse professionnelle à ce mail client La Poste (service: {$serviceType}).\n" .
+            "Génère une réponse professionnelle à ce mail client La Poste (service: {$serviceType}).{$languageInstruction}\n" .
             "Retourne JSON: {subject, body, quality_score:{clarity:0-100,empathy:0-100,compliance:0-100,overall:0-100}, tone, warnings:[]}.\n\n" .
             "Mail: {$anonymized}"
         );

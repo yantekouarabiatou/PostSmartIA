@@ -10,6 +10,9 @@ function getToken(): string | null {
   return localStorage.getItem('auth_token')
 }
 
+// Endpoints IA pouvant prendre jusqu'à 60s côté backend → timeout étendu
+const AI_PATHS = ['/analyze', '/generate', '/improve', '/call-reports/generate', '/chat']
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
@@ -22,7 +25,23 @@ async function request<T>(
   }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const res = await fetch(`${BASE_URL}${path}`, { ...options, headers })
+  const isAiCall = AI_PATHS.some(p => path.includes(p))
+  const timeoutMs = isAiCall ? 90_000 : 15_000
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+
+  let res: Response
+  try {
+    res = await fetch(`${BASE_URL}${path}`, { ...options, headers, signal: controller.signal })
+  } catch (e: any) {
+    clearTimeout(timer)
+    if (e?.name === 'AbortError') {
+      throw new Error('network timeout — le serveur met trop de temps à répondre')
+    }
+    throw new Error('Failed to fetch — ' + (e?.message ?? 'réseau inaccessible'))
+  }
+  clearTimeout(timer)
 
   if (res.status === 401) {
     if (typeof window !== 'undefined') {

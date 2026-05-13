@@ -34,7 +34,7 @@ type ErrorInfo = {
 function getErrorType(raw: string): ErrorInfo["type"] {
   const l = raw.toLowerCase()
   if (l.includes("database") || l.includes("500") || l.includes("server error")) return "server"
-  if (l.includes("failed to fetch") || l.includes("network") || l.includes("fetch")) return "network"
+  if (l.includes("failed to fetch") || l.includes("network") || l.includes("fetch") || l.includes("timeout") || l.includes("inaccessible")) return "network"
   if (l.includes("désactivé") || l.includes("403")) return "account"
   return "auth"
 }

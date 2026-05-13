@@ -3,15 +3,6 @@
 import { useState } from "react"
 import DataTable, { type TableColumn, type TableProps } from "react-data-table-component"
 
-// react-data-table-component v7 forwards `allowOverflow` to a DOM <div> — suppress at module load
-if (typeof window !== "undefined") {
-  const _err = console.error.bind(console)
-  console.error = (...args: unknown[]) => {
-    if (typeof args[0] === "string" && args[0].includes("allowOverflow")) return
-    _err(...args)
-  }
-}
-
 const customStyles = {
   headRow: {
     style: {
@@ -66,6 +57,9 @@ export default function AppDataTable<T extends object>({
 }: AppDataTableProps<T>) {
   const [search, setSearch] = useState("")
 
+  // Strip `allowOverflow` so react-data-table-component doesn't forward it to a DOM <div>
+  const safeColumns = columns.map(({ allowOverflow: _, ...col }) => col as TableColumn<T>)
+
   const filtered = searchable && search.trim()
     ? data.filter(row =>
         Object.values(row as Record<string, unknown>).some(val =>
@@ -112,7 +106,7 @@ export default function AppDataTable<T extends object>({
         </div>
       )}
       <DataTable
-        columns={columns}
+        columns={safeColumns}
         data={filtered}
         progressPending={loading}
         progressComponent={

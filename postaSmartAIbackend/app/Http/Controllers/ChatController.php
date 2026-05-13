@@ -39,7 +39,8 @@ class ChatController extends Controller
         }
 
         // Détection de mots-clés d'escalade pour enrichir le contexte
-        $lastMessage      = end($request->messages)['content'] ?? '';
+        $messagesArr      = $request->input('messages', []);
+        $lastMessage      = end($messagesArr)['content'] ?? '';
         $escaladeKeywords = ['avocat', 'tribunal', 'plainte', 'poursuite', 'juridique', 'media', 'scandale', 'porter plainte'];
         $mentionsEscalade = false;
         foreach ($escaladeKeywords as $kw) {

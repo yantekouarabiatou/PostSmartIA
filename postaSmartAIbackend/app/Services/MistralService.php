@@ -110,16 +110,22 @@ class MistralService implements AiServiceInterface
         ['text' => $anonymized] = $this->filter->anonymize($emailContent);
 
         return $this->completeJson(
-            "Analyse ce mail client La Poste. Retourne JSON: {service_type, urgency, tone, client_name, dossier_number, main_request, key_points:[], suggested_actions:[]}.\nMail: {$anonymized}"
+            "Analyse ce mail client La Poste. Détecte la langue et retourne JSON:\n" .
+            "{detected_language (code ISO 639-1), language_name (nom en français), is_foreign_language (bool), french_translation (traduction complète en français si langue étrangère, null sinon), service_type (reclamation|suivi_colis|info_offre|escalade_mediateur|handicap|formulaire|autre), urgency (haute|normale|faible), tone (agressif|neutre|positif), client_name, dossier_number, main_request (toujours en français), key_points:[], suggested_actions:[]}.\n" .
+            "Mail: {$anonymized}"
         );
     }
 
-    public function generateEmailResponse(string $emailContent, string $serviceType = ''): array
+    public function generateEmailResponse(string $emailContent, string $serviceType = '', string $detectedLanguage = 'fr'): array
     {
         ['text' => $anonymized, 'map' => $map] = $this->filter->anonymize($emailContent);
 
+        $languageInstruction = ($detectedLanguage && $detectedLanguage !== 'fr')
+            ? "\nIMPORTANT: Réponds dans la langue du client (code: {$detectedLanguage}). Le champ body doit être entièrement dans cette langue."
+            : '';
+
         $result = $this->completeJson(
-            "Génère une réponse professionnelle à ce mail La Poste (service: {$serviceType}).\n" .
+            "Génère une réponse professionnelle à ce mail La Poste (service: {$serviceType}).{$languageInstruction}\n" .
             "Retourne JSON: {subject, body, quality_score:{clarity,empathy,compliance,overall}, tone, warnings:[]}.\n\nMail: {$anonymized}"
         );
 

@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(php -l \"C:\\\\wamp64\\\\www\\\\postsmartAI\\\\postaSmartAIbackend\\\\app\\\\Services\\\\GeminiService.php\" ; php -l \"C:\\\\wamp64\\\\www\\\\postsmartAI\\\\postaSmartAIbackend\\\\app\\\\Services\\\\MistralService.php\" ; php -l \"C:\\\\wamp64\\\\www\\\\postsmartAI\\\\postaSmartAIbackend\\\\app\\\\Services\\\\GroqService.php\" ; php -l \"C:\\\\wamp64\\\\www\\\\postsmartAI\\\\postaSmartAIbackend\\\\app\\\\Services\\\\ClaudeService.php\" ; php -l \"C:\\\\wamp64\\\\www\\\\postsmartAI\\\\postaSmartAIbackend\\\\app\\\\Http\\\\Controllers\\\\EmailInboxController.php\" ; php -l \"C:\\\\wamp64\\\\www\\\\postsmartAI\\\\postaSmartAIbackend\\\\app\\\\Contracts\\\\AiServiceInterface.php\")"
+    ]
+  }
+}

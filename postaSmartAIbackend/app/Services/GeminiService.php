@@ -247,22 +247,32 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
             [['role' => 'user', 'content' =>
                 "Analyse ce mail client et retourne un JSON avec :
                 {
+                  \"detected_language\": \"fr\",
+                  \"language_name\": \"Français\",
+                  \"is_foreign_language\": false,
+                  \"french_translation\": null,
                   \"service_type\": \"reclamation|suivi_colis|info_offre|escalade_mediateur|handicap|formulaire|autre\",
                   \"urgency\": \"haute|normale|faible\",
                   \"tone\": \"agressif|neutre|positif\",
                   \"client_name\": \"nom extrait ou null\",
                   \"dossier_number\": \"numéro extrait ou null\",
-                  \"main_request\": \"résumé en une phrase\",
+                  \"main_request\": \"résumé en une phrase (toujours en français)\",
                   \"key_points\": [\"point1\", \"point2\"],
                   \"suggested_actions\": [\"action1\", \"action2\"]
                 }
+                Règles détection langue :
+                - detected_language = code ISO 639-1 (ex: \"en\", \"es\", \"de\", \"ar\", \"zh\")
+                - language_name = nom en français (ex: \"Anglais\", \"Espagnol\", \"Arabe\")
+                - is_foreign_language = true si la langue n'est pas le français
+                - french_translation = traduction complète et fidèle du mail en français si is_foreign_language=true, null sinon
+                - main_request, key_points et suggested_actions doivent toujours être en français
                 Mail : $anonymized",
             ]],
             $this->systemPrompt()
         );
     }
 
-    public function generateEmailResponse(string $emailContent, string $serviceType = ''): array
+    public function generateEmailResponse(string $emailContent, string $serviceType = '', string $detectedLanguage = 'fr'): array
     {
         // P0 — Anonymisation avant envoi API externe
         ['text' => $anonymized, 'map' => $map] = $this->filter->anonymize($emailContent);
@@ -274,9 +284,17 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
             $system .= "\n\n## Règles de la charte relationnelle La Poste (à respecter impérativement) :\n" . $charteRules;
         }
 
+        $languageInstruction = '';
+        if ($detectedLanguage && $detectedLanguage !== 'fr') {
+            $languageInstruction = "\nIMPORTANT : Ce client a écrit dans une langue étrangère (code: {$detectedLanguage}). " .
+                "Génère la réponse directement dans la même langue que le client ({$detectedLanguage}), " .
+                "tout en respectant les standards professionnels La Poste. " .
+                "Le champ 'body' doit être entièrement dans la langue du client.";
+        }
+
         $result = $this->completeJson(
             [['role' => 'user', 'content' =>
-                "Génère une réponse professionnelle à ce mail client ($serviceType).
+                "Génère une réponse professionnelle à ce mail client ($serviceType).{$languageInstruction}
                 Retourne UNIQUEMENT ce JSON (les scores sont des entiers réels entre 0 et 100, PAS des zéros) :
                 {
                   \"subject\": \"Objet du mail de réponse\",
