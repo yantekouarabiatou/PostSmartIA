@@ -57,14 +57,18 @@ export default function AppDataTable<T extends object>({
 }: AppDataTableProps<T>) {
   const [search, setSearch] = useState("")
 
-  // Strip boolean props that react-data-table-component forwards to DOM elements
-  const safeColumns = columns.map(({ allowOverflow: _, right, ...col }) => {
-    if (!right) return col as TableColumn<T>
-    return {
-      ...col,
-      style:       { justifyContent: "flex-end", ...(col.style as object ?? {}) },
-      headerStyle: { justifyContent: "flex-end", ...(col.headerStyle as object ?? {}) },
-    } as TableColumn<T>
+  // Strip props that react-data-table-component forwards to DOM elements
+  const safeColumns = columns.map(({ allowOverflow: _, right, minWidth, ...col }) => {
+    const extra: Record<string, object> = {}
+    if (right) {
+      extra.style       = { justifyContent: "flex-end", ...(col.style as object ?? {}) }
+      extra.headerStyle = { justifyContent: "flex-end", ...(col.headerStyle as object ?? {}) }
+    }
+    if (minWidth) {
+      extra.style       = { minWidth, ...(extra.style ?? col.style as object ?? {}) }
+      extra.headerStyle = { minWidth, ...(extra.headerStyle ?? col.headerStyle as object ?? {}) }
+    }
+    return { ...col, ...extra } as TableColumn<T>
   })
 
   const filtered = searchable && search.trim()
