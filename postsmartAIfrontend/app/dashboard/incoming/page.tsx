@@ -22,6 +22,16 @@ async function exportEmailToPdf(email: Parameters<Awaited<typeof import("@/lib/e
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
+interface Attachment {
+  name: string
+  size: number
+  mime_type: string
+  is_image: boolean
+  is_pdf: boolean
+  url: string
+  stored_path: string
+}
+
 interface Email {
   id: number
   from_name: string | null
@@ -45,6 +55,7 @@ interface Email {
   resolved_points: string[] | null
   open_points: string[] | null
   is_follow_up_overdue: boolean
+  attachments: Attachment[] | null
 }
 
 interface Analysis {
@@ -106,6 +117,189 @@ const TABS = [
 interface StatusCounts {
   all: number; unread: number; pending: number; partial: number
   escalated: number; resolved: number; archived: number
+}
+
+// ── Pièces jointes ────────────────────────────────────────────────────────────
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} o`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} Ko`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`
+}
+
+function AttachmentsPanel({
+  emailId,
+  attachments,
+  onUpdate,
+}: {
+  emailId: number
+  attachments: Attachment[] | null
+  onUpdate: (list: Attachment[]) => void
+}) {
+  const [uploading, setUploading] = useState(false)
+  const [dragOver, setDragOver]   = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setUploading(true)
+    const uploaded: Attachment[] = []
+    for (const file of Array.from(files)) {
+      try {
+        const att = await api.upload<Attachment>('/emails/upload-attachment', file)
+        uploaded.push(att)
+      } catch { /* ignore individual errors */ }
+    }
+    if (uploaded.length > 0) {
+      const newList = [...(attachments ?? []), ...uploaded]
+      try {
+        await api.post(`/emails/${emailId}/attachments`, { attachments: newList })
+        onUpdate(newList)
+      } catch { /* ignore */ }
+    }
+    setUploading(false)
+  }
+
+  function removeAt(index: number) {
+    const newList = (attachments ?? []).filter((_, i) => i !== index)
+    api.post(`/emails/${emailId}/attachments`, { attachments: newList })
+      .then(() => onUpdate(newList))
+      .catch(() => {})
+  }
+
+  const list = attachments ?? []
+
+  return (
+    <div style={{ margin: "0 16px 12px", borderRadius: 10, border: "1px solid #E5E7EB", overflow: "hidden" }}>
+      {/* Header */}
+      <div style={{
+        background: "#F9FAFB", borderBottom: list.length > 0 ? "1px solid #E5E7EB" : "none",
+        padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: "#374151", display: "flex", alignItems: "center", gap: 6 }}>
+          📎 Pièces jointes {list.length > 0 && <span style={{ background: "#E5E7EB", borderRadius: 10, padding: "1px 7px", fontSize: 11 }}>{list.length}</span>}
+        </span>
+        <button
+          onClick={() => inputRef.current?.click()}
+          disabled={uploading}
+          style={{
+            background: "#00205B", color: "#fff", border: "none", borderRadius: 7,
+            padding: "5px 12px", fontSize: 12, fontWeight: 600, cursor: uploading ? "wait" : "pointer",
+            display: "flex", alignItems: "center", gap: 5, opacity: uploading ? 0.6 : 1,
+          }}
+        >
+          {uploading ? "Upload…" : "+ Ajouter"}
+        </button>
+        <input
+          ref={inputRef} type="file" multiple
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+          style={{ display: "none" }}
+          onChange={e => handleFiles(e.target.files)}
+        />
+      </div>
+
+      {/* Drop zone */}
+      <div
+        onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files) }}
+        style={{
+          background: dragOver ? "#EBF4FF" : "#fff",
+          transition: "background 150ms",
+          padding: list.length === 0 ? "24px 16px" : "0",
+        }}
+      >
+        {/* Empty state */}
+        {list.length === 0 && !uploading && (
+          <div style={{ textAlign: "center", color: "#9CA3AF", fontSize: 12 }}>
+            <div style={{ fontSize: 28, marginBottom: 6 }}>📂</div>
+            Aucune pièce jointe — glissez-déposez ou cliquez sur <strong>+ Ajouter</strong>
+          </div>
+        )}
+        {uploading && (
+          <div style={{ textAlign: "center", padding: "16px", color: "#6B7280", fontSize: 12 }}>
+            <div style={{ width: 24, height: 24, border: "2px solid #E5E7EB", borderTopColor: "#0066CC", borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 8px" }} />
+            Upload en cours…
+          </div>
+        )}
+
+        {/* File list */}
+        {list.length > 0 && (
+          <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
+            {list.map((att, i) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                background: "#F9FAFB", borderRadius: 8, padding: "8px 10px",
+                border: "1px solid #F0F0F0",
+              }}>
+                {/* Aperçu image ou icône */}
+                {att.is_image ? (
+                  <img
+                    src={att.url} alt={att.name}
+                    style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 6, border: "1px solid #E5E7EB", flexShrink: 0 }}
+                    onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
+                  />
+                ) : (
+                  <div style={{
+                    width: 40, height: 40, borderRadius: 6, flexShrink: 0,
+                    background: att.is_pdf ? "#FEF2F2" : "#F0F7FF",
+                    display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20,
+                  }}>
+                    {att.is_pdf ? "📄" : "📎"}
+                  </div>
+                )}
+
+                {/* Infos */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: 13, fontWeight: 500, color: "#1A1A2E", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {att.name}
+                  </p>
+                  <p style={{ margin: 0, fontSize: 11, color: "#9CA3AF" }}>
+                    {att.mime_type} · {formatBytes(att.size)}
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                  <a
+                    href={att.url} target="_blank" rel="noreferrer"
+                    style={{
+                      padding: "4px 10px", borderRadius: 6, background: "#EBF4FF", color: "#0066CC",
+                      fontSize: 11, fontWeight: 600, textDecoration: "none", border: "1px solid #BFDBFE",
+                    }}
+                  >
+                    {att.is_image ? "Voir" : "Télécharger"}
+                  </a>
+                  <button
+                    onClick={() => removeAt(i)}
+                    style={{
+                      padding: "4px 8px", borderRadius: 6, background: "#FEF2F2", color: "#DC2626",
+                      fontSize: 11, fontWeight: 600, border: "1px solid #FECACA", cursor: "pointer",
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {/* Drop zone subtil quand il y a déjà des fichiers */}
+            <div
+              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+              onDrop={e => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files) }}
+              style={{
+                textAlign: "center", padding: "8px", borderRadius: 6, border: "1px dashed #D1D5DB",
+                color: "#9CA3AF", fontSize: 11, cursor: "pointer", background: dragOver ? "#EBF4FF" : "transparent",
+              }}
+              onClick={() => inputRef.current?.click()}
+            >
+              + Glissez un fichier ici ou cliquez pour ajouter
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function initials(name: string | null, email: string) {
@@ -887,6 +1081,13 @@ export default function IncomingPage() {
           {selected.body_text}
         </pre>
       </div>
+
+      {/* Pièces jointes */}
+      <AttachmentsPanel
+        emailId={selected.id}
+        attachments={selected.attachments}
+        onUpdate={(list) => setSelected(prev => prev ? { ...prev, attachments: list } : null)}
+      />
 
       {/* Traduction française — depuis l'analyse IA */}
       {aiResult?.analysis?.is_foreign_language && aiResult.analysis.french_translation && (

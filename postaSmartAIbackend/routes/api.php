@@ -96,10 +96,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/',    [EmailInboxController::class, 'index']);
 
         // Routes statiques AVANT /{id} pour éviter la capture par le wildcard
-        Route::get('/stats',   [EmailInboxController::class, 'stats']);
-        Route::get('/counts',  [EmailInboxController::class, 'counts']);
-        Route::post('/sync',   [EmailInboxController::class, 'sync']);
-        Route::get('/thread',  [EmailInboxController::class, 'thread']);
+        Route::get('/stats',              [EmailInboxController::class, 'stats']);
+        Route::get('/counts',             [EmailInboxController::class, 'counts']);
+        Route::post('/sync',              [EmailInboxController::class, 'sync']);
+        Route::get('/thread',             [EmailInboxController::class, 'thread']);
+        Route::post('/upload-attachment', [EmailInboxController::class, 'uploadAttachment']);
 
         Route::get('/{id}',                        [EmailInboxController::class, 'show']);
         Route::put('/{id}/read',                   [EmailInboxController::class, 'markAsRead']);
@@ -114,6 +115,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/escalate',              [EmailInboxController::class, 'escalate']);
         Route::post('/{id}/escalate/acknowledge',  [EmailInboxController::class, 'acknowledgeEscalation']);
         Route::put('/{id}/priority',               [EmailInboxController::class, 'updatePriority']);
+        Route::post('/{id}/attachments',           [EmailInboxController::class, 'saveAttachments']);
     });
 
     // Notifications

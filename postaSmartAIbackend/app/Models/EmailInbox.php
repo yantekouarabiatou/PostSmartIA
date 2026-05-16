@@ -18,6 +18,7 @@ class EmailInbox extends Model
         'archived_at', 'source',
         'internal_note', 'follow_up_at', 'escalated_to',
         'resolved_points', 'open_points', 'priority',
+        'attachments',
     ];
 
     protected $appends = ['is_follow_up_overdue'];
@@ -35,6 +36,7 @@ class EmailInbox extends Model
             'ai_quality_score_json' => 'array',
             'resolved_points'    => 'array',
             'open_points'        => 'array',
+            'attachments'        => 'array',
         ];
     }
 

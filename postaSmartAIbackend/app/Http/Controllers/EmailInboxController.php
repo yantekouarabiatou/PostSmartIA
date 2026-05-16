@@ -14,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Storage;
 
 class EmailInboxController extends Controller
 {
@@ -541,5 +542,43 @@ class EmailInboxController extends Controller
             'total'        => $emails->count(),
             'emails'       => $emails,
         ], 'Fil de conversation récupéré');
+    }
+
+    // ─── Upload pièce jointe ─────────────────────────────────────────────────
+
+    public function uploadAttachment(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file' => 'required|file|max:10240|mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,txt',
+        ]);
+
+        $file     = $request->file('file');
+        $path     = $file->store('email-attachments', 'public');
+        $mime     = $file->getMimeType() ?? '';
+        $isImage  = str_starts_with($mime, 'image/');
+        $isPdf    = $mime === 'application/pdf';
+
+        return ApiResponse::success([
+            'name'         => $file->getClientOriginalName(),
+            'size'         => $file->getSize(),
+            'mime_type'    => $mime,
+            'is_image'     => $isImage,
+            'is_pdf'       => $isPdf,
+            'url'          => Storage::url($path),
+            'stored_path'  => $path,
+        ], 'Fichier uploadé');
+    }
+
+    // ─── Enregistre les pièces jointes sur un mail ───────────────────────────
+
+    public function saveAttachments(Request $request, int $id): JsonResponse
+    {
+        $email = EmailInbox::find($id);
+        if (!$email) return ApiResponse::error(null, 'Mail introuvable', 404);
+
+        $request->validate(['attachments' => 'required|array']);
+        $email->update(['attachments' => $request->attachments]);
+
+        return ApiResponse::success($email->attachments, 'Pièces jointes enregistrées');
     }
 }

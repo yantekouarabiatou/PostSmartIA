@@ -72,6 +72,25 @@ export const api = {
     request<T>(path, { method: 'PUT', body: JSON.stringify(body) }),
 
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+
+  upload: <T>(path: string, file: File, fieldName = 'file'): Promise<T> => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+    const formData = new FormData()
+    formData.append(fieldName, file)
+    return fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: formData,
+    })
+      .then(res => res.json())
+      .then(json => {
+        if (!json.success && json.message) throw new Error(json.message)
+        return json.data as T
+      })
+  },
 }
 
 // ── Types communs ──────────────────────────────────────────────────────────
