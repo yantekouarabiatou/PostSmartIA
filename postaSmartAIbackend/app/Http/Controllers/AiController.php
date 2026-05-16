@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\ApiResponse;
 use App\Models\CallReport;
-use App\Models\EmailHistory;
 use App\Models\EmailInbox;
 use App\Models\KnowledgeBase;
 use App\Services\ActivityLogService;
@@ -172,20 +171,7 @@ class AiController extends Controller
             ->get()
             ->toArray();
 
-        $histories = EmailHistory::where('user_id', $user->id)
-            ->where('created_at', '>=', $since)
-            ->select(['service_type', 'quality_score', 'created_at'])
-            ->orderBy('created_at', 'desc')
-            ->limit(30)
-            ->get()
-            ->map(fn($h) => [
-                'ai_service_type'  => $h->service_type,
-                'ai_quality_score' => is_array($h->quality_score) ? ($h->quality_score['overall'] ?? null) : null,
-                'status'           => 'resolved',
-            ])
-            ->toArray();
-
-        $all = array_merge($emails, $histories);
+        $all = $emails;
 
         if (empty($all)) {
             return ApiResponse::success([
