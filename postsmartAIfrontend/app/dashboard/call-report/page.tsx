@@ -16,7 +16,7 @@ import AppSelect, { type SelectOption } from "@/components/ui/app-select"
 import QualityScore from "@/components/ui/quality-score"
 async function exportCallReportToPdf(payload: any) {
   if (typeof window === 'undefined') return
-  const mod = await import("@/lib/export-pdf")
+  const mod = await import("../../../lib/export-pdf")
   return mod.exportCallReportToPdf(payload)
 }
 

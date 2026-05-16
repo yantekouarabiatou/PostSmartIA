@@ -23,7 +23,7 @@ const ROLE_EMOJIS: Record<RoleId, string> = {
 const DEMOS: Record<RoleId, { email: string; password: string }> = {
   conseiller: { email: "jean.martin@laposte.fr", password: "Conseiller@2024!" },
   manager:    { email: "manager@laposte.fr",      password: "Manager@2024!"    },
-  admin:      { email: "admin@postsmartia.fr",    password: "Admin@2026!"      },
+  admin:      { email: "admin@laposte.fr",        password: "Admin@2024!"      },
 }
 
 type ErrorInfo = {

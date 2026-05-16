@@ -9,10 +9,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // 1. Étendre l'ENUM status (MySQL)
-        DB::statement("ALTER TABLE emails_inbox MODIFY COLUMN status
-            ENUM('unread','read','processing','pending','partial','escalated','resolved','archived')
-            DEFAULT 'unread'");
+        // 1. Étendre l'ENUM status (MySQL uniquement - SQLite n'a pas d'ENUM natif)
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE emails_inbox MODIFY COLUMN status
+                ENUM('unread','read','processing','pending','partial','escalated','resolved','archived')
+                DEFAULT 'unread'");
+        }
 
         Schema::table('emails_inbox', function (Blueprint $table) {
             if (!Schema::hasColumn('emails_inbox', 'internal_note')) {
@@ -39,9 +41,11 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::statement("ALTER TABLE emails_inbox MODIFY COLUMN status
-            ENUM('unread','read','processing','resolved','archived')
-            DEFAULT 'unread'");
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement("ALTER TABLE emails_inbox MODIFY COLUMN status
+                ENUM('unread','read','processing','resolved','archived')
+                DEFAULT 'unread'");
+        }
 
         Schema::table('emails_inbox', function (Blueprint $table) {
             $table->dropColumn([

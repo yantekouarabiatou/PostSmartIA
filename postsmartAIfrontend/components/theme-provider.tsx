@@ -1,18 +1,9 @@
 'use client'
 
 import * as React from 'react'
-import { ThemeProvider as NextThemesProvider, type ThemeProviderProps } from 'next-themes'
 
-export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
-  const [mounted, setMounted] = React.useState(false)
-
-  React.useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  if (!mounted) {
-    return <>{children}</>
-  }
-
-  return <NextThemesProvider {...props}>{children}</NextThemesProvider>
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  // Simple theme provider without next-themes to avoid hydration mismatches
+  // Can be enhanced later with localStorage + useEffect if needed
+  return <>{children}</>
 }

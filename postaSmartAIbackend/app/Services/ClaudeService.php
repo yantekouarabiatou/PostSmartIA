@@ -44,8 +44,8 @@ PROMPT;
 
     private function complete(string $userMessage, int $maxTokens = 4096, ?string $systemOverride = null): string
     {
-        // P0 — SSL vérifié
-        $response = Http::withOptions(['verify' => true])
+        // P0 — SSL vérifié en production, désactivé en dev
+        $response = Http::withOptions(['verify' => config('app.env') === 'production'])
             ->timeout(60)
             ->withHeaders([
                 'x-api-key'         => $this->apiKey,

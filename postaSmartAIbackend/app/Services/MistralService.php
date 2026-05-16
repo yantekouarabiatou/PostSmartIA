@@ -45,8 +45,8 @@ class MistralService implements AiServiceInterface
             ? array_merge([['role' => 'system', 'content' => $systemPrompt]], $messages)
             : $messages;
 
-        // P0 — SSL vérifié
-        $response = Http::withOptions(['verify' => true])
+        // P0 — SSL vérifié en production, désactivé en dev
+        $response = Http::withOptions(['verify' => config('app.env') === 'production'])
             ->withHeaders([
                 'Authorization' => 'Bearer ' . $this->apiKey,
                 'Content-Type'  => 'application/json',

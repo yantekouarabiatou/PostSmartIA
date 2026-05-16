@@ -3,7 +3,7 @@
 const BASE_URL =
   typeof window !== 'undefined' && process.env.NODE_ENV === 'production'
     ? '/api/backend'
-    : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001/api')
+    : (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api')
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null

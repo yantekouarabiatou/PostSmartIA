@@ -56,7 +56,7 @@ class GeminiService implements AiServiceInterface
 
         $url = "{$this->baseUrl}/models/{$this->model}:generateContent?key={$this->apiKey}";
 
-        $response = Http::withOptions(['verify' => true])->timeout(60)->post($url, $payload);
+        $response = Http::withOptions(['verify' => config('app.env') === 'production'])->timeout(60)->post($url, $payload);
 
         if ($response->failed()) {
             LogSanitizer::error('Gemini API error', [

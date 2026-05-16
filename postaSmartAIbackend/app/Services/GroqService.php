@@ -29,8 +29,8 @@ class GroqService implements AiServiceInterface
             'max_tokens'  => 4096,
         ];
 
-        // P0 — SSL vérifié (suppression de withoutVerifying)
-        $response = Http::withOptions(['verify' => true])
+        // P0 — SSL vérifié en production, désactivé en dev
+        $response = Http::withOptions(['verify' => config('app.env') === 'production'])
             ->withHeaders([
                 'Authorization' => 'Bearer ' . config('services.groq.api_key'),
                 'Content-Type'  => 'application/json',

@@ -14,8 +14,8 @@ import { StatusBadge, PriorityBadge } from "@/components/ui/status-badge"
 import { EmailStatus, EmailPriority, STATUS_CONFIG, ESCALATION_TARGETS } from "@/lib/email-status"
 import EscalationAlert, { type EscalationData } from "@/components/ui/escalation-alert"
 
-async function exportEmailToPdf(email: Parameters<Awaited<typeof import("@/lib/export-pdf")>["exportEmailToPdf"]>[0]) {
-  const { exportEmailToPdf: fn } = await import("@/lib/export-pdf")
+async function exportEmailToPdf(email: any) {
+  const { exportEmailToPdf: fn } = await import("../../../lib/export-pdf")
   return fn(email)
 }
 

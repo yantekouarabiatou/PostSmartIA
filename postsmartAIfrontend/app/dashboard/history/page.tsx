@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils"
 import { api } from "@/lib/api"
 async function exportHistoryEmailToPdf(record: EmailRecord) {
   if (typeof window === 'undefined') return
-  const mod = await import("@/lib/export-pdf")
+  const mod = await import("../../../lib/export-pdf")
   return mod.exportHistoryEmailToPdf(record)
 }
 
