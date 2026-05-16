@@ -57,8 +57,15 @@ export default function AppDataTable<T extends object>({
 }: AppDataTableProps<T>) {
   const [search, setSearch] = useState("")
 
-  // Strip `allowOverflow` so react-data-table-component doesn't forward it to a DOM <div>
-  const safeColumns = columns.map(({ allowOverflow: _, ...col }) => col as TableColumn<T>)
+  // Strip boolean props that react-data-table-component forwards to DOM elements
+  const safeColumns = columns.map(({ allowOverflow: _, right, ...col }) => {
+    if (!right) return col as TableColumn<T>
+    return {
+      ...col,
+      style:       { justifyContent: "flex-end", ...(col.style as object ?? {}) },
+      headerStyle: { justifyContent: "flex-end", ...(col.headerStyle as object ?? {}) },
+    } as TableColumn<T>
+  })
 
   const filtered = searchable && search.trim()
     ? data.filter(row =>
