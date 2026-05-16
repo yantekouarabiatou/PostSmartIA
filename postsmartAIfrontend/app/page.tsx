@@ -6,6 +6,7 @@ import {
   Mail, Phone, Bot, Check, Star, Sparkles,
   ArrowRight, ChevronDown, Mic, Shield, Zap, Users,
 } from "lucide-react"
+import { DrawerBackground } from "@/components/DrawerBackground"
 import { LanguageProvider, LangSwitcher, useI18n } from "@/lib/i18n"
 
 // ── Intersection hook ─────────────────────────────────────────────────────────
@@ -480,6 +481,7 @@ function LandingContent() {
 
         {/* ══ HERO ══ */}
         <section className="ld-hero">
+          <DrawerBackground />
           <div className="ld-hero-grid" />
           <div className="ld-hero-orb ld-orb-a" />
           <div className="ld-hero-orb ld-orb-b" />

@@ -7,6 +7,7 @@ import {
   Bot, Phone, Check, AlertCircle, Sparkles,
   WifiOff, ServerCrash, X, UserX,
 } from "lucide-react"
+import { DrawerBackground } from "@/components/DrawerBackground"
 import { api } from "@/lib/api"
 import { LanguageProvider, LangSwitcher, useI18n } from "@/lib/i18n"
 
@@ -121,7 +122,6 @@ function AiCard() {
         </p>
       </div>
 
-      {/* AI stage */}
       {phase === 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{
@@ -432,6 +432,10 @@ const CSS = `
     color: #6B7280; transition: color 0.2s;
   }
   .lp-role-btn.active .lp-role-label { color: #0066CC; }
+  .lp-role-desc {
+    font-size: 10px; color: #9CA3AF; line-height: 1;
+  }
+  .lp-role-btn.active .lp-role-desc { color: rgba(0,102,204,0.7); }
 
   /* Divider */
   .lp-div {
@@ -578,7 +582,7 @@ const CSS = `
   }
   .lp-reg-link:hover { color: #003D99; text-decoration: underline; }
 
-  /* Security */
+  /* Sécurité */
   .lp-sec {
     display: flex; align-items: center; justify-content: center; gap: 6px;
     font-size: 11.5px; color: #B0BAC9;
@@ -631,7 +635,7 @@ function LoginContent() {
     setError(null)
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: { preventDefault(): void }) {
     e.preventDefault()
     setLoading(true)
     setError(null)
@@ -667,7 +671,7 @@ function LoginContent() {
 
         {/* ══════════════ LEFT PANEL ══════════════ */}
         <div className="lp-left">
-          {/* Background */}
+          <DrawerBackground />
           <div className="lp-grid" />
           <div className="lp-orb lp-orb-1" />
           <div className="lp-orb lp-orb-2" />
@@ -729,9 +733,9 @@ function LoginContent() {
           <div className="lp-stats-wrap">
             <div className="lp-stats">
               {[
-                { end: 2400, suffix: "+", label: "Conseillers actifs"  },
-                { end: 18000, suffix: "",  label: "Emails traités / jour" },
-                { end: 65,   suffix: "%", label: "Temps de réponse réduit" },
+                { end: 2400,  suffix: "+", label: "Conseillers actifs"       },
+                { end: 18000, suffix: "",  label: "Emails traités / jour"    },
+                { end: 65,    suffix: "%", label: "Temps de réponse réduit"  },
               ].map(s => (
                 <div key={s.label} className="lp-stat">
                   <div className="lp-stat-val">
@@ -748,7 +752,7 @@ function LoginContent() {
         {/* ══════════════ RIGHT PANEL ══════════════ */}
         <div className="lp-right">
 
-          {/* Mobile logo + lang switcher */}
+          {/* Mobile logo */}
           <div className="lp-mob-logo">
             <div className="lp-logo-badge">
               <Mail size={17} color="#00205B" strokeWidth={2.5} />
@@ -779,6 +783,7 @@ function LoginContent() {
                 >
                   <span className="lp-role-emoji">{r.emoji}</span>
                   <span className="lp-role-label">{r.label}</span>
+                  <span className="lp-role-desc">{r.desc}</span>
                 </button>
               ))}
             </div>
@@ -817,7 +822,7 @@ function LoginContent() {
                 </div>
               </div>
 
-              {/* Password */}
+              {/* Mot de passe */}
               <div className="lp-field">
                 <label className="lp-label">{tl.passwordLabel}</label>
                 <div className="lp-wrap">
