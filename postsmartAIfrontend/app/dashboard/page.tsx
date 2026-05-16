@@ -14,6 +14,8 @@ import {
 } from "recharts"
 import { api } from "@/lib/api"
 import { DrawerBackground } from "@/components/DrawerBackground"
+import CoachWidget from "@/components/ui/coach-widget"
+import DailySummaryWidget from "@/components/ui/daily-summary-widget"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -861,6 +863,19 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* ── Coach IA + Résumé du jour ─────────────────────────────────────────── */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+          gap: "16px",
+          marginBottom: "24px",
+        }}
+      >
+        <CoachWidget />
+        <DailySummaryWidget />
+      </div>
 
       {/* ── Activité récente ──────────────────────────────────────────────────── */}
       <div

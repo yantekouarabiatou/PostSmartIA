@@ -131,10 +131,11 @@ class AuthController extends Controller
             'last_name'  => 'sometimes|string|max:255',
             'avatar'     => 'nullable|url',
             'password'   => 'nullable|string|min:8|confirmed',
+            'team_theme' => 'nullable|string|in:blue,yellow,green,purple,red,teal,navy',
         ]);
 
         $user = $request->user();
-        $data = $request->only(['first_name', 'last_name', 'avatar']);
+        $data = $request->only(['first_name', 'last_name', 'avatar', 'team_theme']);
 
         if ($request->filled('password')) {
             $data['password'] = Hash::make($request->password);

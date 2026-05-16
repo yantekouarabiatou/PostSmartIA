@@ -13,6 +13,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 import { api, type GeneratedEmail } from "@/lib/api"
+import ToneGauge from "@/components/ui/tone-gauge"
+
+const RESPONSE_LANGUAGES = [
+  { value: "fr", label: "🇫🇷 Français" },
+  { value: "en", label: "🇬🇧 Anglais" },
+  { value: "es", label: "🇪🇸 Espagnol" },
+  { value: "de", label: "🇩🇪 Allemand" },
+  { value: "it", label: "🇮🇹 Italien" },
+  { value: "pt", label: "🇵🇹 Portugais" },
+  { value: "ar", label: "🇸🇦 Arabe" },
+]
+
+interface SatisfactionResult {
+  satisfaction_score: number
+  stars: number
+  label: string
+  strengths: string[]
+  improvements: string[]
+  risk_level: "low" | "medium" | "high"
+  risk_reason: string
+}
 
 const EMAIL_TYPES = [
   { value: "livraison",    label: "Suivi de livraison"     },
@@ -47,13 +68,16 @@ export default function GenerateEmailPage() {
   const [additionalInfo, setAdditionalInfo] = useState("")
   const [showAdvanced, setShowAdvanced]     = useState(false)
 
-  const [result, setResult]       = useState<GeneratedEmail | null>(null)
-  const [generating, setGenerating] = useState(false)
-  const [saving, setSaving]         = useState(false)
-  const [saved, setSaved]           = useState(false)
-  const [copied, setCopied]         = useState(false)
-  const [genError, setGenError]     = useState("")
-  const [saveMsg, setSaveMsg]       = useState("")
+  const [responseLang, setResponseLang]     = useState("fr")
+  const [result, setResult]                 = useState<GeneratedEmail | null>(null)
+  const [generating, setGenerating]         = useState(false)
+  const [saving, setSaving]                 = useState(false)
+  const [saved, setSaved]                   = useState(false)
+  const [copied, setCopied]                 = useState(false)
+  const [genError, setGenError]             = useState("")
+  const [saveMsg, setSaveMsg]               = useState("")
+  const [satisfaction, setSatisfaction]     = useState<SatisfactionResult | null>(null)
+  const [loadingSat, setLoadingSat]         = useState(false)
 
   async function handleGenerate() {
     if (!context.trim()) return
@@ -77,11 +101,13 @@ export default function GenerateEmailPage() {
       const data = await api.post<GeneratedEmail>("/ai/generate-response", {
         email_content: emailContent,
         service_type: emailType,
+        detected_language: responseLang !== "fr" ? responseLang : undefined,
         entities: clientName
           ? { client_name: clientName, main_request: context }
           : undefined,
       })
       setResult(data)
+      setSatisfaction(null)
     } catch (err: any) {
       setGenError(err.message || "Erreur lors de la génération. Vérifiez la clé API Groq dans .env.")
     } finally {
@@ -108,6 +134,19 @@ export default function GenerateEmailPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function handlePredictSatisfaction() {
+    if (!result) return
+    setLoadingSat(true)
+    try {
+      const data = await api.post<SatisfactionResult>("/ai/satisfaction", {
+        response_body: result.body,
+        original_email: context,
+      })
+      setSatisfaction(data)
+    } catch { /* non-bloquant */ }
+    finally { setLoadingSat(false) }
   }
 
   function handleCopy() {
@@ -196,6 +235,17 @@ export default function GenerateEmailPage() {
                   </Select>
                 </div>
               </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">🌍 Langue de la réponse</label>
+                <Select value={responseLang} onValueChange={setResponseLang}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {RESPONSE_LANGUAGES.map(l => (
+                      <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </CardContent>
           </Card>
 
@@ -218,6 +268,7 @@ export default function GenerateEmailPage() {
                   onChange={e => setContext(e.target.value)}
                   className="min-h-[110px] resize-none"
                 />
+                <ToneGauge text={context} />
               </div>
               <Collapsible open={showAdvanced} onOpenChange={setShowAdvanced}>
                 <CollapsibleTrigger asChild>
@@ -332,6 +383,60 @@ export default function GenerateEmailPage() {
                       </div>
                     ))}
                   </div>
+
+                  {/* Prédiction satisfaction */}
+                  {!satisfaction && (
+                    <button
+                      onClick={handlePredictSatisfaction}
+                      disabled={loadingSat}
+                      style={{
+                        width: "100%", background: "#F5F3FF", color: "#7C3AED",
+                        border: "1px solid #DDD6FE", borderRadius: 8, padding: "8px",
+                        fontSize: 12, fontWeight: 600, cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                      }}
+                    >
+                      {loadingSat
+                        ? "⏳ Prédiction en cours…"
+                        : "⭐ Prédire la satisfaction client"}
+                    </button>
+                  )}
+                  {satisfaction && (
+                    <div style={{
+                      borderRadius: 10, border: "1px solid #DDD6FE",
+                      background: "#F5F3FF", padding: "12px 14px",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                        <span style={{ fontSize: 20 }}>
+                          {"⭐".repeat(satisfaction.stars)}{"☆".repeat(5 - satisfaction.stars)}
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#7C3AED" }}>
+                          {satisfaction.label}
+                        </span>
+                        <span style={{
+                          marginLeft: "auto", fontSize: 11, fontWeight: 600, padding: "2px 8px",
+                          borderRadius: 20,
+                          background: satisfaction.risk_level === "low" ? "#ECFDF5"
+                            : satisfaction.risk_level === "medium" ? "#FFFBEB" : "#FEF2F2",
+                          color: satisfaction.risk_level === "low" ? "#059669"
+                            : satisfaction.risk_level === "medium" ? "#D97706" : "#DC2626",
+                        }}>
+                          Risque {satisfaction.risk_level === "low" ? "faible"
+                            : satisfaction.risk_level === "medium" ? "moyen" : "élevé"}
+                        </span>
+                      </div>
+                      {satisfaction.strengths.length > 0 && (
+                        <div style={{ fontSize: 11, color: "#059669", marginBottom: 4 }}>
+                          {satisfaction.strengths.map((s, i) => <div key={i}>✓ {s}</div>)}
+                        </div>
+                      )}
+                      {satisfaction.improvements.length > 0 && (
+                        <div style={{ fontSize: 11, color: "#D97706" }}>
+                          {satisfaction.improvements.map((s, i) => <div key={i}>💡 {s}</div>)}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
 
                 {/* Sauvegarde */}

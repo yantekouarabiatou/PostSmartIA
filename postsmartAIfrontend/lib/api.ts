@@ -11,7 +11,7 @@ function getToken(): string | null {
 }
 
 // Endpoints IA pouvant prendre jusqu'à 60s côté backend → timeout étendu
-const AI_PATHS = ['/analyze', '/generate', '/improve', '/call-reports/generate', '/chat']
+const AI_PATHS = ['/analyze', '/generate', '/improve', '/call-reports/generate', '/chat', '/translate', '/satisfaction', '/coach-report', '/daily-summary']
 
 async function request<T>(
   path: string,

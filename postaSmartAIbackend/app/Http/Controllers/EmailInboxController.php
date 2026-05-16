@@ -519,4 +519,27 @@ class EmailInboxController extends Controller
             'unread'          => EmailInbox::where('is_read', false)->count(),
         ], 'Statistiques mails');
     }
+
+    // ─── Fil de conversation ─────────────────────────────────────────────────
+
+    public function thread(Request $request): JsonResponse
+    {
+        $request->validate(['email' => 'required|email']);
+
+        $emails = EmailInbox::where('from_email', $request->email)
+            ->orderBy('received_at', 'desc')
+            ->select([
+                'id', 'subject', 'body_text', 'received_at',
+                'status', 'ai_service_type', 'validated_at',
+                'ai_quality_score', 'is_read',
+            ])
+            ->limit(20)
+            ->get();
+
+        return ApiResponse::success([
+            'sender_email' => $request->email,
+            'total'        => $emails->count(),
+            'emails'       => $emails,
+        ], 'Fil de conversation récupéré');
+    }
 }

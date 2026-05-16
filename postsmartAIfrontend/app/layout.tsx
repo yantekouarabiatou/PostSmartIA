@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
+import { LanguageProvider } from '@/lib/i18n'
 import { Toaster } from 'react-hot-toast'
 import './globals.css'
 
@@ -54,8 +55,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
-          <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
+          <LanguageProvider>
+            {children}
+            <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
+          </LanguageProvider>
         </ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

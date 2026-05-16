@@ -46,7 +46,7 @@ PROMPT;
     {
         // P0 — SSL vérifié
         $response = Http::withOptions(['verify' => true])
-            ->timeout(60)
+            ->timeout(25)
             ->withHeaders([
                 'x-api-key'         => $this->apiKey,
                 'anthropic-version' => '2023-06-01',
@@ -205,5 +205,47 @@ PROMPT;
         }
 
         return $result;
+    }
+
+    public function translateEmail(string $text, string $sourceLang): array
+    {
+        return $this->completeJson(
+            "Traduis fidèlement ce texte depuis la langue '{$sourceLang}' vers le français professionnel.\n" .
+            "Retourne ce JSON :\n" .
+            "{\"translated_text\": \"traduction complète\", \"source_language\": \"{$sourceLang}\", \"key_phrases\": [\"expression clé traduite\"]}\n\n" .
+            "Texte :\n{$text}",
+            4096,
+            "Tu es un traducteur expert multilingue. JSON uniquement."
+        );
+    }
+
+    public function predictSatisfaction(string $responseBody, string $originalEmail): array
+    {
+        ['text' => $anonResponse] = $this->filter->anonymize($responseBody);
+        ['text' => $anonOriginal] = $this->filter->anonymize($originalEmail);
+        return $this->completeJson(
+            "Évalue la satisfaction probable du client.\nMail original :\n{$anonOriginal}\nRéponse :\n{$anonResponse}\n\n" .
+            "Retourne JSON : {satisfaction_score:1-5, stars:1-5, label:\"Très insatisfait|Insatisfait|Neutre|Satisfait|Très satisfait\", strengths:[\"...\"], improvements:[\"...\"], risk_level:\"low|medium|high\", risk_reason:\"...\"}."
+        );
+    }
+
+    public function generateCoachReport(array $recentEmails, string $agentName): array
+    {
+        $total   = count($recentEmails);
+        $scores  = array_filter(array_column($recentEmails, 'ai_quality_score'), fn($s) => $s > 0);
+        $avgScore = count($scores) > 0 ? round(array_sum($scores) / count($scores)) : 0;
+        return $this->completeJson(
+            "Génère un rapport coach pour {$agentName} — {$total} mails traités, score moyen {$avgScore}/100.\n" .
+            "Retourne JSON : {overall_grade:\"A|B|C|D\", overall_label:\"...\", overall_message:\"...\", strengths:[{title:\"...\",detail:\"...\"}], improvements:[{title:\"...\",tip:\"...\",priority:\"high|medium|low\"}], weekly_tip:\"...\", top_service_type:null, avg_score_trend:\"stable|improving|declining\", total_analyzed:{$total}}."
+        );
+    }
+
+    public function generateDailySummary(array $stats, string $agentName): array
+    {
+        $s = json_encode($stats);
+        return $this->completeJson(
+            "Génère un résumé journalier motivant pour {$agentName}.\nStats : {$s}\n\n" .
+            "Retourne JSON : {headline:\"...\", mood:\"excellent|good|average|tough\", mood_emoji:\"...\", highlights:[\"...\"], watch_out:null, tomorrow_tip:\"...\", motivation_quote:\"...\"}."
+        );
     }
 }

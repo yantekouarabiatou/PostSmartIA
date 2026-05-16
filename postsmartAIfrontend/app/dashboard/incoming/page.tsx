@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { RefreshCw, Search, Sparkles, Archive, RotateCcw, Check, X, ChevronDown, ChevronUp } from "lucide-react"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -13,6 +13,7 @@ import AudioReader from "@/components/ui/audio-reader"
 import { StatusBadge, PriorityBadge } from "@/components/ui/status-badge"
 import { EmailStatus, EmailPriority, STATUS_CONFIG, ESCALATION_TARGETS } from "@/lib/email-status"
 import EscalationAlert, { type EscalationData } from "@/components/ui/escalation-alert"
+import { getLanguageInfo, detectLanguageHeuristic } from "@/lib/language"
 
 async function exportEmailToPdf(email: Parameters<Awaited<typeof import("@/lib/export-pdf")>["exportEmailToPdf"]>[0]) {
   const { exportEmailToPdf: fn } = await import("@/lib/export-pdf")
@@ -369,6 +370,12 @@ export default function IncomingPage() {
   const [escalateNote, setEscalateNote] = useState("")
   const [actionLoading, setActionLoading] = useState(false)
   const [escalationData, setEscalationData] = useState<EscalationData | null>(null)
+  const [translating, setTranslating] = useState(false)
+  const [onDemandTranslation, setOnDemandTranslation] = useState<{ text: string; lang: string } | null>(null)
+  const translationRef = useRef<HTMLDivElement>(null)
+  const [thread, setThread] = useState<Email[]>([])
+  const [threadOpen, setThreadOpen] = useState(false)
+  const [loadingThread, setLoadingThread] = useState(false)
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -411,12 +418,46 @@ export default function IncomingPage() {
     return () => clearInterval(interval)
   }, [])
 
+  async function handleTranslate() {
+    if (!selected?.body_text) return
+    setTranslating(true)
+    try {
+      const detectedLang = detectLanguageHeuristic(selected.body_text)
+      const langInfo = getLanguageInfo(detectedLang)
+      const res = await api.post<{ translated_text: string; source_language: string }>("/ai/translate", {
+        text: selected.body_text,
+        source_lang: detectedLang,
+      })
+      const translatedText = res.translated_text
+      setOnDemandTranslation({ text: translatedText, lang: langInfo.name })
+      toast.success(`🌍 Traduction ${langInfo.flag} disponible — voir ci-dessous`, { duration: 4000 })
+      setTimeout(() => translationRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100)
+    } catch (e: any) {
+      toast.error("Traduction impossible : " + (e?.message ?? "erreur serveur"), { duration: 6000 })
+    } finally {
+      setTranslating(false)
+    }
+  }
+
+  async function loadThread(email: Email) {
+    setLoadingThread(true)
+    setThread([])
+    try {
+      const res = await api.get<{ emails: Email[] }>(`/emails/thread?email=${encodeURIComponent(email.from_email)}`)
+      setThread((res.emails ?? []).filter(e => e.id !== email.id))
+    } catch {}
+    finally { setLoadingThread(false) }
+  }
+
   async function selectEmail(email: Email) {
     setSelected(email)
     setAiResult(null)
     setEscalationData(null)
     setEditedSubject("")
     setEditedBody("")
+    setOnDemandTranslation(null)
+    setThread([])
+    setThreadOpen(false)
     if (isMobile) setShowDetail(true)
     if (email.status === "unread") {
       try {
@@ -714,6 +755,14 @@ export default function IncomingPage() {
                     {email.is_follow_up_overdue && (
                       <span style={{ fontSize: 10, color: "#DC2626", fontWeight: 700 }}>⚠ Suivi en retard</span>
                     )}
+                    {(() => {
+                      const lang = detectLanguageHeuristic(email.body_text ?? "")
+                      if (lang === "fr") return null
+                      const info = getLanguageInfo(lang)
+                      return (
+                        <span title={info.name} style={{ fontSize: 13, lineHeight: 1 }}>{info.flag}</span>
+                      )
+                    })()}
                   </div>
                 </div>
               </div>
@@ -839,13 +888,96 @@ export default function IncomingPage() {
         </pre>
       </div>
 
-      {/* Traduction française — visible uniquement si mail étranger */}
+      {/* Traduction française — depuis l'analyse IA */}
       {aiResult?.analysis?.is_foreign_language && aiResult.analysis.french_translation && (
         <TranslationPanel
-          languageName={aiResult.analysis.language_name ?? aiResult.analysis.detected_language ?? ""}
+          languageName={
+            aiResult.analysis.language_name ||
+            getLanguageInfo(aiResult.analysis.detected_language ?? "fr").name
+          }
           translation={aiResult.analysis.french_translation}
         />
       )}
+
+      {/* Traduction à la demande — heuristique client */}
+      {!onDemandTranslation && !(aiResult?.analysis?.is_foreign_language && aiResult.analysis.french_translation) && (() => {
+        const lang = detectLanguageHeuristic(selected.body_text ?? "")
+        if (lang === "fr") return null
+        const info = getLanguageInfo(lang)
+        return (
+          <div style={{ margin: "0 16px 12px", display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 10, background: "#FFFBEB", border: "1px solid #FDE68A" }}>
+            <span style={{ fontSize: 18 }}>{info.flag}</span>
+            <span style={{ fontSize: 13, color: "#92400E", flex: 1 }}>Mail détecté en <strong>{info.name}</strong></span>
+            <button
+              onClick={handleTranslate}
+              disabled={translating}
+              style={{
+                padding: "6px 14px", borderRadius: 8, border: "none", cursor: translating ? "wait" : "pointer",
+                background: "#D97706", color: "#fff", fontWeight: 600, fontSize: 12,
+                display: "flex", alignItems: "center", gap: 5, opacity: translating ? 0.7 : 1,
+              }}
+            >
+              {translating ? (
+                <><div style={{ width: 10, height: 10, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.65s linear infinite" }} /> Traduction…</>
+              ) : "🌍 Traduire"}
+            </button>
+          </div>
+        )
+      })()}
+      {onDemandTranslation && (
+        <div ref={translationRef}>
+          <TranslationPanel languageName={onDemandTranslation.lang} translation={onDemandTranslation.text} />
+        </div>
+      )}
+
+      {/* Fil de conversation */}
+      <div style={{ margin: "0 16px 12px", borderRadius: 10, border: "1px solid #E5E7EB", overflow: "hidden" }}>
+        <button
+          onClick={() => {
+            if (!threadOpen && thread.length === 0) loadThread(selected)
+            setThreadOpen(v => !v)
+          }}
+          style={{
+            width: "100%", padding: "10px 16px", background: "#F9FAFB",
+            border: "none", cursor: "pointer", display: "flex",
+            justifyContent: "space-between", alignItems: "center",
+            fontSize: 13, fontWeight: 600, color: "#374151",
+          }}
+        >
+          <span>💬 Fil de conversation avec ce client</span>
+          {threadOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </button>
+        {threadOpen && (
+          <div style={{ background: "#fff", maxHeight: 280, overflowY: "auto" }}>
+            {loadingThread ? (
+              <div style={{ padding: 20, textAlign: "center", color: "#9CA3AF", fontSize: 13 }}>Chargement…</div>
+            ) : thread.length === 0 ? (
+              <div style={{ padding: "14px 16px", fontSize: 13, color: "#9CA3AF" }}>Aucun autre mail de ce client.</div>
+            ) : thread.map(t => {
+              const sc = SERVICE_COLOR[t.ai_service_type ?? ""] ?? "#6B7280"
+              return (
+                <div key={t.id} style={{
+                  padding: "10px 16px", borderBottom: "1px solid #F5F5F5",
+                  display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer",
+                  background: t.id === selected.id ? "#EBF4FF" : "#fff",
+                }} onClick={() => selectEmail(t)}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: sc, marginTop: 5, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "#00205B", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {t.subject}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2, display: "flex", gap: 6 }}>
+                      <span>{relativeDate(t.received_at)}</span>
+                      {t.ai_service_type && <span style={{ color: sc }}>· {SERVICE_LABEL[t.ai_service_type] ?? t.ai_service_type}</span>}
+                    </div>
+                  </div>
+                  <StatusBadge status={t.status} size="sm" />
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Resolved: show validated response */}
       {selected.status === "resolved" && selected.validated_response && (

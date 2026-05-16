@@ -51,12 +51,12 @@ class GeminiService implements AiServiceInterface
         // P0 — SSL vérifié ; P1 — fenêtre étendue à 4096 tokens
         $payload['generationConfig'] = [
             'temperature'     => 0.4,
-            'maxOutputTokens' => 4096,
+            'maxOutputTokens' => 2048,
         ];
 
         $url = "{$this->baseUrl}/models/{$this->model}:generateContent?key={$this->apiKey}";
 
-        $response = Http::withOptions(['verify' => true])->timeout(60)->post($url, $payload);
+        $response = Http::withOptions(['verify' => true])->timeout(25)->post($url, $payload);
 
         if ($response->failed()) {
             LogSanitizer::error('Gemini API error', [
@@ -419,6 +419,106 @@ indique-le clairement au conseiller et suggère de vérifier les ressources inte
         }
 
         return $result;
+    }
+
+    public function translateEmail(string $text, string $sourceLang): array
+    {
+        return $this->completeJson(
+            [['role' => 'user', 'content' =>
+                "Traduis fidèlement ce texte depuis la langue '{$sourceLang}' vers le français professionnel.\n" .
+                "Retourne ce JSON :\n" .
+                "{\"translated_text\": \"traduction complète\", \"source_language\": \"{$sourceLang}\", \"key_phrases\": [\"expression clé traduite\"]}\n\n" .
+                "Texte :\n{$text}"
+            ]],
+            "Tu es un traducteur expert multilingue au service des conseillers La Poste. JSON uniquement."
+        );
+    }
+
+    public function predictSatisfaction(string $responseBody, string $originalEmail): array
+    {
+        ['text' => $anonResponse] = $this->filter->anonymize($responseBody);
+        ['text' => $anonOriginal] = $this->filter->anonymize($originalEmail);
+
+        return $this->completeJson(
+            [['role' => 'user', 'content' =>
+                "Évalue la satisfaction probable du client après réception de cette réponse.\n\n" .
+                "Mail original du client :\n{$anonOriginal}\n\n" .
+                "Réponse rédigée par le conseiller :\n{$anonResponse}\n\n" .
+                "Retourne ce JSON :\n" .
+                "{\n" .
+                "  \"satisfaction_score\": 4,\n" .
+                "  \"stars\": 4,\n" .
+                "  \"label\": \"Satisfait\",\n" .
+                "  \"strengths\": [\"point fort 1\", \"point fort 2\"],\n" .
+                "  \"improvements\": [\"amélioration possible 1\"],\n" .
+                "  \"risk_level\": \"low|medium|high\",\n" .
+                "  \"risk_reason\": \"explication si risque moyen ou élevé\"\n" .
+                "}\n" .
+                "satisfaction_score est entre 1 (très insatisfait) et 5 (très satisfait)."
+            ]],
+            "Tu es expert en relation client La Poste. Évalue objectivement la satisfaction prévisible. JSON uniquement."
+        );
+    }
+
+    public function generateCoachReport(array $recentEmails, string $agentName): array
+    {
+        $summary = array_map(fn($e) => sprintf(
+            "- Service: %s | Score qualité: %s | Statut: %s",
+            $e['ai_service_type'] ?? 'autre',
+            $e['ai_quality_score'] ?? 'N/A',
+            $e['status'] ?? 'inconnu'
+        ), array_slice($recentEmails, 0, 30));
+
+        $summaryText = implode("\n", $summary);
+        $count = count($recentEmails);
+
+        return $this->completeJson(
+            [['role' => 'user', 'content' =>
+                "Tu es le coach IA du conseiller {$agentName}. Analyse ses {$count} derniers mails traités.\n\n" .
+                "Données :\n{$summaryText}\n\n" .
+                "Génère un rapport de coaching personnalisé en JSON :\n" .
+                "{\n" .
+                "  \"overall_grade\": \"A|B|C|D\",\n" .
+                "  \"overall_label\": \"Excellent|Bien|À améliorer|Insuffisant\",\n" .
+                "  \"overall_message\": \"message motivant personnalisé de 2 phrases\",\n" .
+                "  \"strengths\": [{\"title\": \"titre\", \"detail\": \"détail\"}],\n" .
+                "  \"improvements\": [{\"title\": \"axe à améliorer\", \"tip\": \"conseil concret\", \"priority\": \"high|medium|low\"}],\n" .
+                "  \"weekly_tip\": \"conseil de la semaine en 1 phrase\",\n" .
+                "  \"top_service_type\": \"type de mail le plus traité\",\n" .
+                "  \"avg_score_trend\": \"stable|improving|declining\"\n" .
+                "}"
+            ]],
+            "Tu es un coach bienveillant et expert en relation client La Poste. JSON uniquement."
+        );
+    }
+
+    public function generateDailySummary(array $stats, string $agentName): array
+    {
+        $hour = now()->format('H');
+
+        return $this->completeJson(
+            [['role' => 'user', 'content' =>
+                "Génère un résumé de fin de journée personnalisé pour {$agentName}.\n\n" .
+                "Statistiques de la journée :\n" .
+                "- Mails traités : " . ($stats['emails_today'] ?? 0) . "\n" .
+                "- Appels traités : " . ($stats['calls_today'] ?? 0) . "\n" .
+                "- Score qualité moyen : " . ($stats['avg_score'] ?? 0) . "/100\n" .
+                "- Mails en attente : " . ($stats['pending'] ?? 0) . "\n" .
+                "- Escalades : " . ($stats['escalated'] ?? 0) . "\n" .
+                "- Temps économisé estimé : " . ($stats['time_saved'] ?? 0) . " min\n\n" .
+                "Retourne ce JSON :\n" .
+                "{\n" .
+                "  \"headline\": \"titre accrocheur de la journée (max 10 mots)\",\n" .
+                "  \"mood\": \"excellent|good|average|tough\",\n" .
+                "  \"mood_emoji\": \"🌟|😊|😐|😤\",\n" .
+                "  \"highlights\": [\"point fort 1\", \"point fort 2\"],\n" .
+                "  \"watch_out\": \"point de vigilance si applicable sinon null\",\n" .
+                "  \"tomorrow_tip\": \"conseil pour demain en 1 phrase\",\n" .
+                "  \"motivation_quote\": \"citation motivante courte\"\n" .
+                "}"
+            ]],
+            "Tu es l'assistant coach La Poste. Génère un résumé encourageant et factuel. JSON uniquement."
+        );
     }
 
     // enableSearch active Google Search Grounding (ajoute ~10-15s — désactivé par défaut)

@@ -57,13 +57,17 @@ Route::middleware('auth:sanctum')->group(function () {
         'parameters' => ['knowledge_base' => 'knowledgeBase'],
     ]);
 
-    // AI – modules 1, 2, 3
+    // AI – modules 1, 2, 3 + nouvelles fonctionnalités
     Route::prefix('ai')->group(function () {
         Route::post('/analyze',           [AiController::class, 'analyzeIncoming']);
         Route::post('/generate-response', [AiController::class, 'generateResponse']);
         Route::post('/improve',           [AiController::class, 'improveEmail']);
         Route::post('/call-report',       [AiController::class, 'generateCallReport']);
         Route::post('/chat',              [AiController::class, 'chat']);
+        Route::post('/translate',         [AiController::class, 'translate']);
+        Route::post('/satisfaction',      [AiController::class, 'predictSatisfaction']);
+        Route::get('/coach-report',       [AiController::class, 'coachReport']);
+        Route::get('/daily-summary',      [AiController::class, 'dailySummary']);
     });
 
     // Chat assistant
@@ -92,9 +96,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/',    [EmailInboxController::class, 'index']);
 
         // Routes statiques AVANT /{id} pour éviter la capture par le wildcard
-        Route::get('/stats',  [EmailInboxController::class, 'stats']);
-        Route::get('/counts', [EmailInboxController::class, 'counts']);
-        Route::post('/sync',  [EmailInboxController::class, 'sync']);
+        Route::get('/stats',   [EmailInboxController::class, 'stats']);
+        Route::get('/counts',  [EmailInboxController::class, 'counts']);
+        Route::post('/sync',   [EmailInboxController::class, 'sync']);
+        Route::get('/thread',  [EmailInboxController::class, 'thread']);
 
         Route::get('/{id}',                        [EmailInboxController::class, 'show']);
         Route::put('/{id}/read',                   [EmailInboxController::class, 'markAsRead']);

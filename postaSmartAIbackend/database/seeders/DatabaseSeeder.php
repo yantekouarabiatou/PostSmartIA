@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
             EmailHistorySeeder::class,
             KnowledgeBaseSeeder::class,
             EmailInboxSeeder::class,
+            MultilingualEmailSeeder::class,
         ]);
     }
 }

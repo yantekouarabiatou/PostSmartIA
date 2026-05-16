@@ -6,6 +6,7 @@ import {
   LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts"
+import { THEME_COLORS } from "@/lib/language"
 
 interface ProfileStats {
   emails_this_month: number
@@ -23,6 +24,7 @@ interface AuthUser {
   email: string
   role: string
   equipe?: string
+  team_theme?: string
 }
 
 const ROLE_LABEL: Record<string, string> = {
@@ -98,14 +100,35 @@ export default function ProfilePage() {
   const [stats, setStats]   = useState<ProfileStats | null>(null)
   const [user, setUser]     = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [selectedTheme, setSelectedTheme] = useState("blue")
+  const [savingTheme, setSavingTheme] = useState(false)
+  const [themeSaved, setThemeSaved] = useState(false)
 
   useEffect(() => {
     try {
       const stored = localStorage.getItem("auth_user")
-      if (stored) setUser(JSON.parse(stored))
+      if (stored) {
+        const u = JSON.parse(stored) as AuthUser
+        setUser(u)
+        if (u.team_theme) setSelectedTheme(u.team_theme)
+      }
     } catch {}
     loadStats()
   }, [])
+
+  async function handleSaveTheme() {
+    setSavingTheme(true)
+    setThemeSaved(false)
+    try {
+      const updated = await api.put<AuthUser>("/auth/profile", { team_theme: selectedTheme })
+      const merged = { ...user, ...updated, team_theme: selectedTheme } as AuthUser
+      setUser(merged)
+      localStorage.setItem("auth_user", JSON.stringify(merged))
+      setThemeSaved(true)
+      setTimeout(() => setThemeSaved(false), 3000)
+    } catch {}
+    finally { setSavingTheme(false) }
+  }
 
   async function loadStats() {
     try {
@@ -161,7 +184,51 @@ export default function ProfilePage() {
               Équipe : {user.equipe}
             </p>
           )}
-          <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #F0F0F0" }}>
+
+          {/* Theme picker */}
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #F0F0F0", textAlign: "left" }}>
+            <p style={{ margin: "0 0 10px", fontSize: 12, fontWeight: 600, color: "#374151" }}>
+              🎨 Thème de l'équipe
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
+              {Object.entries(THEME_COLORS).map(([key, t]) => (
+                <button
+                  key={key}
+                  title={t.name}
+                  onClick={() => setSelectedTheme(key)}
+                  style={{
+                    width: 28, height: 28, borderRadius: "50%",
+                    background: t.primary, border: "none", cursor: "pointer",
+                    outline: selectedTheme === key ? `3px solid ${t.primary}` : "2px solid transparent",
+                    outlineOffset: 2,
+                    transform: selectedTheme === key ? "scale(1.15)" : "scale(1)",
+                    transition: "all 150ms",
+                    boxShadow: selectedTheme === key ? `0 0 0 2px #fff, 0 0 0 4px ${t.primary}` : "none",
+                  }}
+                />
+              ))}
+            </div>
+            {selectedTheme && (
+              <p style={{ margin: "8px 0 10px", fontSize: 11, color: "#6B7280", textAlign: "center" }}>
+                {THEME_COLORS[selectedTheme]?.emoji} {THEME_COLORS[selectedTheme]?.name}
+              </p>
+            )}
+            <button
+              onClick={handleSaveTheme}
+              disabled={savingTheme}
+              style={{
+                width: "100%", padding: "8px", borderRadius: 8, border: "none",
+                background: themeSaved ? "#059669" : THEME_COLORS[selectedTheme]?.primary ?? "#0066CC",
+                color: "#fff", fontSize: 12, fontWeight: 600, cursor: savingTheme ? "wait" : "pointer",
+                transition: "background 300ms",
+                opacity: savingTheme ? 0.7 : 1,
+              }}
+            >
+              {themeSaved ? "✓ Thème enregistré" : savingTheme ? "Enregistrement…" : "Appliquer ce thème"}
+            </button>
+          </div>
+
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid #F0F0F0" }}>
             <p style={{ margin: 0, fontSize: 12, color: "#9CA3AF" }}>PostSmart IA — La Poste</p>
           </div>
         </div>
