@@ -238,6 +238,7 @@ export default function UsersPage() {
   const columns = useMemo<TableColumn<User>[]>(() => [
     {
       name: "Nom",
+      minWidth: "200px",
       cell: (row) => (
         <div className="flex items-center gap-2.5 py-1">
           <UserAvatar user={row} />
@@ -250,11 +251,13 @@ export default function UsersPage() {
     },
     {
       name: "Email",
+      minWidth: "240px",
       cell: (row) => <span className="text-muted-foreground text-sm">{row.email}</span>,
-      grow: 2,
+      grow: 3,
     },
     {
       name: "Rôle",
+      minWidth: "140px",
       cell: (row) => {
         const cfg = ROLE_CFG[row.role] ?? { label: row.role, color: "bg-gray-100 text-gray-700" }
         return <Badge className={cn("text-xs border-0", cfg.color)}>{cfg.label}</Badge>
@@ -263,18 +266,21 @@ export default function UsersPage() {
     },
     {
       name: "Équipe",
+      minWidth: "130px",
       cell: (row) => <span className="text-muted-foreground text-sm">{row.equipe ?? "—"}</span>,
       grow: 1,
     },
     {
       name: "Statut",
+      minWidth: "100px",
       cell: (row) => row.is_active
         ? <Badge className="text-xs border-0 bg-green-100 text-green-800">Actif</Badge>
         : <Badge className="text-xs border-0 bg-gray-100 text-gray-600">Inactif</Badge>,
       grow: 0.8,
     },
     {
-      name: "Connexion",
+      name: "Dernière connexion",
+      minWidth: "160px",
       cell: (row) => (
         <span className="text-muted-foreground text-xs whitespace-nowrap">
           {row.last_login_at
@@ -282,10 +288,11 @@ export default function UsersPage() {
             : "Jamais"}
         </span>
       ),
-      grow: 1,
+      grow: 1.2,
     },
     {
       name: "Actions",
+      minWidth: "120px",
       allowOverflow: true,
       right: true,
       cell: (row) => (
@@ -312,7 +319,7 @@ export default function UsersPage() {
           </Button>
         </div>
       ),
-      grow: 0.8,
+      grow: 1,
     },
   ], [openEdit, handleToggle]) // eslint-disable-line react-hooks/exhaustive-deps
 
