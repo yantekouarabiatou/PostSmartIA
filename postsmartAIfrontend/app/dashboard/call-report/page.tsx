@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
   Phone, Sparkles, Copy, Check, RotateCcw, X, AlertCircle, FileText, Save,
+  Timer, History, ChevronDown, ChevronUp, Star, TrendingUp,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -14,9 +15,10 @@ import VoiceRecorder from "@/components/voice-recorder"
 import AudioReader from "@/components/ui/audio-reader"
 import AppSelect, { type SelectOption } from "@/components/ui/app-select"
 import QualityScore from "@/components/ui/quality-score"
+
 async function exportCallReportToPdf(payload: any) {
   if (typeof window === 'undefined') return
-  const mod = await import("../../../lib/export-pdf")
+  const mod = await import("@/lib/export-pdf")
   return mod.exportCallReportToPdf(payload)
 }
 
@@ -39,6 +41,227 @@ const URGENCY_PILLS = [
 
 type Urgency = "faible" | "normale" | "haute"
 
+// ── Minuteur d'appel ──────────────────────────────────────────────────────────
+function CallTimer({ onDurationSet }: { onDurationSet: (minutes: number) => void }) {
+  const [running, setRunning] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const startRef    = useRef(0)
+
+  function start() {
+    startRef.current = Date.now() - elapsed * 1000
+    intervalRef.current = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000))
+    }, 1000)
+    setRunning(true)
+  }
+
+  function stop() {
+    if (intervalRef.current) clearInterval(intervalRef.current)
+    setRunning(false)
+    onDurationSet(Math.max(1, Math.round(elapsed / 60)))
+  }
+
+  function reset() {
+    if (intervalRef.current) clearInterval(intervalRef.current)
+    setRunning(false)
+    setElapsed(0)
+  }
+
+  useEffect(() => () => { if (intervalRef.current) clearInterval(intervalRef.current) }, [])
+
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0')
+  const ss = String(elapsed % 60).padStart(2, '0')
+
+  return (
+    <div className={cn(
+      "flex items-center gap-2.5 rounded-lg border px-3 py-2 transition-colors",
+      running
+        ? "border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-950/20"
+        : "border-border/50 bg-muted/30"
+    )}>
+      <Timer className={cn("h-4 w-4 shrink-0", running ? "text-red-500 animate-pulse" : "text-primary")} />
+      <span className={cn(
+        "font-mono text-base font-bold tabular-nums min-w-[52px]",
+        running ? "text-red-600 dark:text-red-400" : "text-foreground"
+      )}>
+        {mm}:{ss}
+      </span>
+      <div className="flex gap-1 ml-auto">
+        {!running ? (
+          <button
+            onClick={start}
+            className="rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            {elapsed > 0 ? "Reprendre" : "Démarrer"}
+          </button>
+        ) : (
+          <button
+            onClick={stop}
+            className="rounded-md bg-red-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-600"
+          >
+            Arrêter → remplir
+          </button>
+        )}
+        {elapsed > 0 && (
+          <button
+            onClick={reset}
+            className="rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Prédiction satisfaction ───────────────────────────────────────────────────
+interface SatisfactionResult {
+  satisfaction_score: number
+  stars: number
+  label: string
+  strengths: string[]
+  improvements: string[]
+  risk_level: "low" | "medium" | "high"
+  risk_reason: string
+}
+
+const RISK_CONFIG = {
+  low:    { color: "text-green-700 dark:text-green-400",   bg: "bg-green-50 dark:bg-green-950/20",   border: "border-green-200 dark:border-green-800",   badge: "Faible risque" },
+  medium: { color: "text-yellow-700 dark:text-yellow-400", bg: "bg-yellow-50 dark:bg-yellow-950/20", border: "border-yellow-200 dark:border-yellow-800", badge: "Risque modéré" },
+  high:   { color: "text-red-700 dark:text-red-400",       bg: "bg-red-50 dark:bg-red-950/20",       border: "border-red-200 dark:border-red-800",       badge: "Risque élevé" },
+}
+
+function SatisfactionCard({ sat }: { sat: SatisfactionResult }) {
+  const risk = RISK_CONFIG[sat.risk_level] ?? RISK_CONFIG.medium
+  return (
+    <div className={cn("rounded-lg border p-3 space-y-2", risk.bg, risk.border)}>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-foreground flex items-center gap-1.5 uppercase tracking-wide">
+          <TrendingUp className="h-3.5 w-3.5 text-primary" />
+          Satisfaction estimée
+        </span>
+        <div className="flex items-center gap-0.5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Star key={i} className={cn("h-3.5 w-3.5", i < sat.stars ? "text-yellow-400 fill-yellow-400" : "text-muted-foreground/30")} />
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className={cn("font-bold text-sm", risk.color)}>{sat.label}</span>
+        <span className={cn("ml-auto text-xs font-medium px-2 py-0.5 rounded-full border", risk.color, risk.bg, risk.border)}>
+          {risk.badge}
+        </span>
+      </div>
+      {sat.risk_reason && (
+        <p className="text-xs text-muted-foreground leading-relaxed">{sat.risk_reason}</p>
+      )}
+    </div>
+  )
+}
+
+// ── Historique des appels ─────────────────────────────────────────────────────
+interface CallReportItem {
+  id: number
+  client_name: string
+  demand_type: string
+  urgency: string
+  call_duration: number | null
+  ai_quality_score: any
+  created_at: string
+}
+
+const URGENCY_DOT: Record<string, string> = {
+  haute:   "bg-red-500",
+  normale: "bg-yellow-400",
+  faible:  "bg-green-500",
+}
+
+function HistoryPanel({ refresh }: { refresh: number }) {
+  const [items, setItems]     = useState<CallReportItem[]>([])
+  const [open, setOpen]       = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [loaded, setLoaded]   = useState(false)
+
+  async function load() {
+    setOpen(o => !o)
+    if (loaded) return
+    setLoading(true)
+    try {
+      const res = await api.get<any>("/call-reports")
+      setItems(res?.data ?? res ?? [])
+      setLoaded(true)
+    } catch { /* silently ignore */ }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    if (!loaded) return
+    setLoading(true)
+    api.get<any>("/call-reports")
+      .then(res => setItems(res?.data ?? res ?? []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [refresh])
+
+  function score(qs: any): number | null {
+    if (typeof qs === 'number') return qs
+    if (typeof qs === 'object' && qs?.overall) return qs.overall
+    return null
+  }
+
+  return (
+    <div className="rounded-xl border border-border/50 overflow-hidden">
+      <button
+        onClick={load}
+        className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium bg-muted/30 hover:bg-muted/50 transition-colors"
+      >
+        <span className="flex items-center gap-2">
+          <History className="h-4 w-4 text-primary" />
+          Historique de mes appels
+        </span>
+        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+      </button>
+
+      {open && (
+        <div className="divide-y divide-border/40 max-h-72 overflow-y-auto">
+          {loading && (
+            <div className="p-6 text-center text-sm text-muted-foreground">Chargement…</div>
+          )}
+          {!loading && items.length === 0 && (
+            <div className="p-6 text-center text-sm text-muted-foreground">Aucun appel enregistré.</div>
+          )}
+          {!loading && items.map(item => {
+            const s = score(item.ai_quality_score)
+            return (
+              <div key={item.id} className="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-muted/30 transition-colors">
+                <span className={cn("h-2 w-2 rounded-full shrink-0", URGENCY_DOT[item.urgency] ?? "bg-gray-400")} />
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-foreground truncate">{item.client_name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{item.demand_type}</p>
+                </div>
+                <div className="text-right shrink-0 space-y-0.5">
+                  {s !== null && (
+                    <p className={cn("text-xs font-bold", s >= 80 ? "text-green-600" : s >= 60 ? "text-yellow-600" : "text-red-500")}>
+                      {s}/100
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(item.created_at).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                    {item.call_duration ? ` · ${item.call_duration}min` : ''}
+                  </p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── ScoreBar ──────────────────────────────────────────────────────────────────
 function ScoreBar({ label, value }: { label: string; value: number }) {
   const color = value >= 80 ? "bg-green-500" : value >= 60 ? "bg-yellow-500" : "bg-red-500"
   return (
@@ -54,6 +277,7 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
   )
 }
 
+// ── Toast ─────────────────────────────────────────────────────────────────────
 function Toast({ message, onClose }: { message: string; onClose: () => void }) {
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-xl border border-green-200 bg-green-50 px-5 py-3 shadow-lg dark:border-green-800 dark:bg-green-950">
@@ -66,6 +290,7 @@ function Toast({ message, onClose }: { message: string; onClose: () => void }) {
   )
 }
 
+// ── Page principale ───────────────────────────────────────────────────────────
 export default function CallReportPage() {
   const [clientName, setClientName]     = useState("")
   const [clientEmail, setClientEmail]   = useState("")
@@ -78,19 +303,22 @@ export default function CallReportPage() {
   const [urgency, setUrgency]           = useState<Urgency>("normale")
   const [callDuration, setCallDuration] = useState("")
 
-  const [result, setResult]           = useState<GeneratedEmail | null>(null)
+  const [result, setResult]               = useState<GeneratedEmail | null>(null)
   const [editedSubject, setEditedSubject] = useState("")
-  const [editedBody, setEditedBody]   = useState("")
-  const [loading, setLoading]         = useState(false)
-  const [saving, setSaving]           = useState(false)
-  const [error, setError]             = useState<string | null>(null)
-  const [copied, setCopied]           = useState(false)
-  const [toast, setToast]             = useState<string | null>(null)
+  const [editedBody, setEditedBody]       = useState("")
+  const [loading, setLoading]             = useState(false)
+  const [saving, setSaving]               = useState(false)
+  const [error, setError]                 = useState<string | null>(null)
+  const [copied, setCopied]               = useState(false)
+  const [toast, setToast]                 = useState<string | null>(null)
+  const [satisfaction, setSatisfaction]   = useState<SatisfactionResult | null>(null)
+  const [satLoading, setSatLoading]       = useState(false)
+  const [historyKey, setHistoryKey]       = useState(0)
 
   function handleTranscript(text: string, field: string) {
-    if (field === "resume")           setCallSummary(prev => prev + text)
-    else if (field === "engagements") setCommitments(prev => prev + text)
-    else if (field === "prochaines_etapes") setNextSteps(prev => prev + text)
+    if (field === "resume")                  setCallSummary(prev => prev + text)
+    else if (field === "engagements")        setCommitments(prev => prev + text)
+    else if (field === "prochaines_etapes")  setNextSteps(prev => prev + text)
   }
 
   async function handleGenerate() {
@@ -98,6 +326,7 @@ export default function CallReportPage() {
     setLoading(true)
     setError(null)
     setResult(null)
+    setSatisfaction(null)
     try {
       const data = await api.post<GeneratedEmail>("/call-reports/generate", {
         client_name:   clientName,
@@ -114,6 +343,16 @@ export default function CallReportPage() {
       setResult(data)
       setEditedSubject(data.subject)
       setEditedBody(data.body)
+
+      // Prédiction satisfaction en parallèle
+      setSatLoading(true)
+      api.post<SatisfactionResult>("/ai/satisfaction", {
+        response_body:  data.body,
+        original_email: callSummary,
+      })
+        .then(s => setSatisfaction(s))
+        .catch(() => {})
+        .finally(() => setSatLoading(false))
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erreur lors de la génération")
     } finally {
@@ -142,6 +381,7 @@ export default function CallReportPage() {
         ai_quality_score:   result.quality_score,
       })
       setToast("Mail post-appel enregistré avec succès ✓")
+      setHistoryKey(k => k + 1)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Erreur lors de l'enregistrement")
     } finally {
@@ -161,6 +401,7 @@ export default function CallReportPage() {
     setResult(null)
     setEditedSubject("")
     setEditedBody("")
+    setSatisfaction(null)
     setError(null)
   }
 
@@ -188,7 +429,7 @@ export default function CallReportPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        {/* ── Left: formulaire ───────────────────────────────────────── */}
+        {/* ── Formulaire ────────────────────────────────────────────────── */}
         <div className="space-y-4">
           <Card className="border-border/50">
             <CardHeader>
@@ -234,7 +475,7 @@ export default function CallReportPage() {
                 </div>
               </div>
 
-              {/* Date et heure de l'appel */}
+              {/* Date et heure */}
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-muted-foreground">
                   📅 Date et heure de l&apos;appel <span className="text-destructive">*</span>
@@ -328,19 +569,28 @@ export default function CallReportPage() {
                 </div>
               </div>
 
-              {/* Durée */}
-              <div className="space-y-1.5">
+              {/* Durée + minuteur */}
+              <div className="space-y-2">
                 <label className="text-sm font-medium text-muted-foreground">
                   Durée de l&apos;appel (minutes)
                 </label>
-                <Input
-                  type="number"
-                  min={1}
-                  placeholder="Ex : 8"
-                  value={callDuration}
-                  onChange={e => setCallDuration(e.target.value)}
-                  className="w-32"
-                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder="Ex : 8"
+                    value={callDuration}
+                    onChange={e => setCallDuration(e.target.value)}
+                    className="w-24"
+                  />
+                  <span className="text-xs text-muted-foreground">ou</span>
+                  <div className="flex-1">
+                    <CallTimer onDurationSet={(m) => setCallDuration(String(m))} />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Démarrez le minuteur au début de l&apos;appel, il remplira la durée automatiquement.
+                </p>
               </div>
 
               {error && (
@@ -371,7 +621,7 @@ export default function CallReportPage() {
           </Card>
         </div>
 
-        {/* ── Right: résultat ────────────────────────────────────────── */}
+        {/* ── Résultat ────────────────────────────────────────────────────── */}
         <div>
           <Card className={cn(
             "border-border/50",
@@ -408,6 +658,15 @@ export default function CallReportPage() {
                 <CardContent className="space-y-4">
                   {/* Scores qualité */}
                   {qs && <QualityScore scores={qs} />}
+
+                  {/* Satisfaction prédite */}
+                  {satLoading && (
+                    <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 p-3 text-xs text-muted-foreground">
+                      <span className="h-3.5 w-3.5 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin shrink-0" />
+                      Analyse de la satisfaction client en cours…
+                    </div>
+                  )}
+                  {satisfaction && !satLoading && <SatisfactionCard sat={satisfaction} />}
 
                   {/* Objet éditable */}
                   <div className="space-y-1.5">
@@ -496,7 +755,7 @@ export default function CallReportPage() {
                     <Button
                       variant="ghost"
                       onClick={handleReset}
-                      className="gap-1.5 text-muted-foreground hover:text-destructive"
+                      className="gap-1.5 text-muted-foreground hover:text-destructive col-span-2"
                     >
                       <X className="h-3.5 w-3.5" />
                       Annuler
@@ -520,6 +779,9 @@ export default function CallReportPage() {
           </Card>
         </div>
       </div>
+
+      {/* ── Historique ─────────────────────────────────────────────────────── */}
+      <HistoryPanel refresh={historyKey} />
     </div>
   )
 }
