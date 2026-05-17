@@ -9,10 +9,9 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // 1. Étendre l'ENUM status (MySQL)
-        DB::statement("ALTER TABLE emails_inbox MODIFY COLUMN status
-            ENUM('unread','read','processing','pending','partial','escalated','resolved','archived')
-            DEFAULT 'unread'");
+        // Expand the status CHECK constraint (PostgreSQL stores enums as varchar + CHECK)
+        DB::statement("ALTER TABLE emails_inbox DROP CONSTRAINT IF EXISTS emails_inbox_status_check");
+        DB::statement("ALTER TABLE emails_inbox ADD CONSTRAINT emails_inbox_status_check CHECK (status IN ('unread','read','processing','pending','partial','escalated','resolved','archived'))");
 
         Schema::table('emails_inbox', function (Blueprint $table) {
             if (!Schema::hasColumn('emails_inbox', 'internal_note')) {
@@ -39,9 +38,8 @@ return new class extends Migration
 
     public function down(): void
     {
-        DB::statement("ALTER TABLE emails_inbox MODIFY COLUMN status
-            ENUM('unread','read','processing','resolved','archived')
-            DEFAULT 'unread'");
+        DB::statement("ALTER TABLE emails_inbox DROP CONSTRAINT IF EXISTS emails_inbox_status_check");
+        DB::statement("ALTER TABLE emails_inbox ADD CONSTRAINT emails_inbox_status_check CHECK (status IN ('unread','read','processing','resolved','archived'))");
 
         Schema::table('emails_inbox', function (Blueprint $table) {
             $table->dropColumn([
