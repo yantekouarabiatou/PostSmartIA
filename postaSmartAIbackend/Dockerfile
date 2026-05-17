@@ -2,7 +2,7 @@ FROM php:8.2-cli
 
 RUN apt-get update && apt-get install -y \
     git curl zip unzip libzip-dev libonig-dev libxml2-dev libssl-dev nodejs npm libpq-dev \
-    && docker-php-ext-install pdo pdo_pgsql mbstring zip
+    && docker-php-ext-install pdo pdo_pgsql pgsql mbstring zip
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
