@@ -3,10 +3,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  output: 'standalone',
   images: {
     unoptimized: true,
   },
@@ -16,7 +12,7 @@ const nextConfig = {
     const backendUrl =
       process.env.BACKEND_URL ??
       process.env.NEXT_PUBLIC_API_URL ??
-      "http://localhost:8001/api"
+      "https://postsmartia-backend.onrender.com/api"
 
     return [
       {
