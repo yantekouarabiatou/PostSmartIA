@@ -26,7 +26,7 @@ async function request<T>(
   if (token) headers['Authorization'] = `Bearer ${token}`
 
   const isAiCall = AI_PATHS.some(p => path.includes(p))
-  const timeoutMs = isAiCall ? 90_000 : 15_000
+ const timeoutMs = isAiCall ? 90_000 : 60_000
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
