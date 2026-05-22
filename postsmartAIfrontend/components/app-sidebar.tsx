@@ -20,6 +20,10 @@ import {
   Shield,
   KeyRound,
   ClipboardList,
+  BarChart2,
+  FileText,
+  Star,
+  GraduationCap,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -60,6 +64,7 @@ const BASE_NAV = [
   { title: "Compte-rendu d'appel",  href: "/dashboard/call-report", icon: Phone },
   { title: "Générer un email",      href: "/dashboard/generate",    icon: Mail },
   { title: "Historique",            href: "/dashboard/history",     icon: History },
+  { title: "Modèles de réponses",   href: "/dashboard/templates",   icon: FileText },
   { title: "Base de connaissances", href: "/dashboard/knowledge",   icon: BookOpen },
 ]
 
@@ -103,12 +108,17 @@ export function AppSidebar({ collapsed, onToggle }: AppSidebarProps) {
 
   const navItems = [
     ...BASE_NAV,
+    { title: "Mode formation",            href: "/dashboard/training",      icon: GraduationCap },
     ...(isManagerOrAdmin
-      ? [{ title: "Gestion utilisateurs", href: "/dashboard/users", icon: Users }]
+      ? [
+          { title: "Rapports",              href: "/dashboard/reports",       icon: BarChart2 },
+          { title: "Satisfaction IA",       href: "/dashboard/satisfaction",  icon: Star },
+          { title: "Gestion utilisateurs",  href: "/dashboard/users",         icon: Users },
+        ]
       : []),
     ...(isAdmin
       ? [
-          { title: "Journaux d'activité",   href: "/dashboard/logs",        icon: Shield },
+          { title: "Journaux d'activité",     href: "/dashboard/logs",        icon: Shield },
           { title: "Gestion des permissions", href: "/dashboard/permissions", icon: KeyRound },
         ]
       : []),

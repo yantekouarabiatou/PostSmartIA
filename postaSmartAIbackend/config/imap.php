@@ -10,6 +10,7 @@ return [
             'username'      => env('IMAP_USERNAME', ''),
             'password'      => env('IMAP_PASSWORD', ''),
             'protocol'      => 'imap',
+            'timeout'       => 10, // abandon connexion IMAP après 10s
             'options'       => [
                 'sequence'    => 1, // Webklex\PHPIMAP\IMAP::ST_UID = 1 (package retiré)
                 'fetch_flags' => true,

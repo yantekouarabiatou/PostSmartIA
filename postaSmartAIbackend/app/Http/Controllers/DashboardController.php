@@ -298,6 +298,166 @@ class DashboardController extends Controller
         ]);
     }
 
+    // ── Analyse des sujets récurrents ────────────────────────────────────────
+    public function recurringTopics(Request $request): JsonResponse
+    {
+        $period  = $request->input('period', 'month'); // week | month | quarter
+        $compare = $request->boolean('compare', true);
+
+        [$currentStart, $currentEnd]   = $this->periodBounds($period, 0);
+        [$previousStart, $previousEnd] = $this->periodBounds($period, 1);
+
+        // ── Répartition par type de service (current) ─────────────────────────
+        $servicesCurrent = EmailInbox::whereBetween('received_at', [$currentStart, $currentEnd])
+            ->whereNotNull('ai_service_type')
+            ->groupBy('ai_service_type')
+            ->selectRaw('ai_service_type, count(*) as total')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn($r) => [
+                'type'    => $r->ai_service_type,
+                'label'   => $this->serviceLabel($r->ai_service_type),
+                'color'   => $this->serviceColor($r->ai_service_type),
+                'current' => (int) $r->total,
+                'prev'    => 0,
+            ])
+            ->keyBy('type');
+
+        if ($compare) {
+            $servicesPrev = EmailInbox::whereBetween('received_at', [$previousStart, $previousEnd])
+                ->whereNotNull('ai_service_type')
+                ->groupBy('ai_service_type')
+                ->selectRaw('ai_service_type, count(*) as total')
+                ->get();
+            foreach ($servicesPrev as $r) {
+                $type = $r->ai_service_type;
+                if ($servicesCurrent->has($type)) {
+                    $item         = $servicesCurrent->get($type);
+                    $item['prev'] = (int) $r->total;
+                    $servicesCurrent->put($type, $item);
+                } else {
+                    $servicesCurrent->put($type, [
+                        'type'    => $type,
+                        'label'   => $this->serviceLabel($type),
+                        'color'   => $this->serviceColor($type),
+                        'current' => 0,
+                        'prev'    => (int) $r->total,
+                    ]);
+                }
+            }
+        }
+
+        $servicesData = $servicesCurrent->values()->map(function ($item) {
+            $diff = $item['prev'] > 0
+                ? round((($item['current'] - $item['prev']) / $item['prev']) * 100)
+                : ($item['current'] > 0 ? 100 : 0);
+            return array_merge($item, ['trend' => $diff]);
+        })->sortByDesc('current')->values();
+
+        // ── Nuage de mots depuis les sujets d'emails ──────────────────────────
+        $subjects = EmailInbox::whereBetween('received_at', [$currentStart, $currentEnd])
+            ->whereNotNull('subject')
+            ->pluck('subject');
+
+        $wordCloud = $this->buildWordCloud($subjects->toArray());
+
+        // ── Alertes sujets récurrents ──────────────────────────────────────────
+        $totalCurrent  = $servicesData->sum('current') ?: 1;
+        $alertThreshold = 0.30; // Alerte si un sujet > 30 % du volume
+        $alerts = $servicesData
+            ->filter(fn($s) => ($s['current'] / $totalCurrent) >= $alertThreshold && $s['current'] >= 5)
+            ->map(fn($s) => [
+                'type'    => $s['type'],
+                'label'   => $s['label'],
+                'count'   => $s['current'],
+                'percent' => round(($s['current'] / $totalCurrent) * 100),
+            ])
+            ->values();
+
+        // ── Évolution temporelle (7 ou 30 jours) ─────────────────────────────
+        $days     = $period === 'week' ? 7 : ($period === 'quarter' ? 13 : 30);
+        $timeline = collect(range($days - 1, 0))->map(function ($i) use ($period) {
+            $date  = $period === 'quarter' ? now()->subWeeks($i) : now()->subDays($i);
+            $start = $period === 'quarter' ? $date->copy()->startOfWeek() : $date->copy()->startOfDay();
+            $end   = $period === 'quarter' ? $date->copy()->endOfWeek()   : $date->copy()->endOfDay();
+            $count = EmailInbox::whereBetween('received_at', [$start, $end])->count();
+            return [
+                'label' => $period === 'quarter' ? 'S' . $date->weekOfYear : $date->format('d/m'),
+                'count' => $count,
+            ];
+        })->values();
+
+        return ApiResponse::success([
+            'period'        => $period,
+            'current_range' => [$currentStart->toDateString(), $currentEnd->toDateString()],
+            'prev_range'    => [$previousStart->toDateString(), $previousEnd->toDateString()],
+            'services'      => $servicesData,
+            'word_cloud'    => $wordCloud,
+            'alerts'        => $alerts,
+            'timeline'      => $timeline,
+            'total_current' => (int) $totalCurrent,
+        ], 'Analyse des sujets récupérée');
+    }
+
+    private function periodBounds(string $period, int $offset): array
+    {
+        return match ($period) {
+            'week'    => [
+                now()->subWeeks($offset)->startOfWeek(),
+                now()->subWeeks($offset)->endOfWeek(),
+            ],
+            'quarter' => [
+                now()->subQuarters($offset)->startOfQuarter(),
+                now()->subQuarters($offset)->endOfQuarter(),
+            ],
+            default   => [ // month
+                now()->subMonths($offset)->startOfMonth(),
+                now()->subMonths($offset)->endOfMonth(),
+            ],
+        };
+    }
+
+    private function buildWordCloud(array $subjects): array
+    {
+        $stopwords = ['le', 'la', 'les', 'de', 'du', 'des', 'un', 'une', 'et', 'en',
+            'à', 'au', 'aux', 'ce', 'se', 'sa', 'son', 'ses', 'sur', 'par', 'pour',
+            'que', 'qui', 'dans', 'avec', 'il', 'elle', 'je', 'tu', 'nous', 'vous',
+            'ils', 'elles', 'ma', 'mon', 'mes', 'ton', 'ta', 'tes', 'ou', 'on', 're',
+            'fwd', 'fw', 'tr', 'objet', 'sujet', 'bonjour', 'merci', 'cordialement',
+            'madame', 'monsieur', 'demande', 'votre', 'notre', 'this', 'your', 'the',
+            'and', 'for', 'with', 'from', 'have', 'will', 'you', 'are', 'that'];
+
+        $freq = [];
+        foreach ($subjects as $subject) {
+            // Décoder quoted-printable et base64 MIME
+            $decoded = quoted_printable_decode($subject);
+            $decoded = mb_strtolower($decoded, 'UTF-8');
+
+            $words = preg_split('/[\s\-_\/,;:.!?()[\]<>{}|@#$%^&*+=~`"\']+/u', $decoded);
+            foreach ($words as $w) {
+                $w = trim($w, " \t\n\r\0\x0B'\"");
+                // Ignorer : trop court, stopword, contient chiffres seuls, ressemble à base64, contient =
+                if (mb_strlen($w) < 4) continue;
+                if (in_array($w, $stopwords)) continue;
+                if (preg_match('/[=]/', $w)) continue;                   // quoted-printable résiduel
+                if (preg_match('/^[0-9]+$/', $w)) continue;              // nombre pur
+                if (preg_match('/^[a-z0-9]{20,}$/i', $w)) continue;     // probable base64/hash
+                if (!preg_match('/[a-zA-ZÀ-ÿ]{3}/u', $w)) continue;     // pas assez de lettres
+                $freq[$w] = ($freq[$w] ?? 0) + 1;
+            }
+        }
+
+        arsort($freq);
+        $top = array_slice($freq, 0, 40, true);
+        $max = max($top ?: [1]);
+
+        return array_map(fn($word, $count) => [
+            'word'   => $word,
+            'count'  => $count,
+            'weight' => round(($count / $max) * 100),
+        ], array_keys($top), array_values($top));
+    }
+
     private function serviceLabel(string $type): string
     {
         return match ($type) {

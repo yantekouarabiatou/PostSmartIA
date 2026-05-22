@@ -16,6 +16,8 @@ import { api } from "@/lib/api"
 import { DrawerBackground } from "@/components/DrawerBackground"
 import CoachWidget from "@/components/ui/coach-widget"
 import DailySummaryWidget from "@/components/ui/daily-summary-widget"
+import RecurringTopicsWidget from "@/components/ui/recurring-topics-widget"
+import FeedbackStatsWidget from "@/components/ui/feedback-stats-widget"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -876,6 +878,16 @@ export default function DashboardPage() {
         <CoachWidget />
         <DailySummaryWidget />
       </div>
+
+      {/* ── Sujets récurrents ─────────────────────────────────────────────────── */}
+      <RecurringTopicsWidget />
+
+      {/* ── Feedback IA — admin/manager uniquement ─────────────────────────────── */}
+      {is_admin && (
+        <div style={{ margin: "0 0 24px" }}>
+          <FeedbackStatsWidget />
+        </div>
+      )}
 
       {/* ── Activité récente ──────────────────────────────────────────────────── */}
       <div

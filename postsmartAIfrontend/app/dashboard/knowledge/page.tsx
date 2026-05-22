@@ -15,6 +15,7 @@ interface KbDoc {
   is_active: boolean
   created_at: string
   updated_at: string
+  creator?: { id: number; first_name: string; last_name: string } | null
 }
 
 interface Paginator {
@@ -70,6 +71,16 @@ export default function KnowledgePage() {
   const [copied, setCopied]   = useState(false)
   const [injected, setInjected] = useState(false)
   const [userRole, setUserRole] = useState<string>("")
+  const [kbVotes, setKbVotes] = useState<Record<number, "up" | "down">>(() => {
+    if (typeof window === "undefined") return {}
+    try { return JSON.parse(localStorage.getItem("kb_votes") ?? "{}") } catch { return {} }
+  })
+
+  function handleVote(docId: number, vote: "up" | "down") {
+    const updated = { ...kbVotes, [docId]: vote }
+    setKbVotes(updated)
+    localStorage.setItem("kb_votes", JSON.stringify(updated))
+  }
 
   useEffect(() => {
     try {
@@ -512,7 +523,17 @@ export default function KnowledgePage() {
                         )}
                       </div>
                     )}
-                    <div className="kb-card-date">{formatDate(doc.created_at)}</div>
+                    <div className="kb-card-date" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>{formatDate(doc.created_at)}</span>
+                      {doc.creator && (
+                        <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: "0.68rem", color: "#6B7280" }}>
+                          <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#EEF4FF", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#0066CC", flexShrink: 0 }}>
+                            {doc.creator.first_name[0]}{doc.creator.last_name[0]}
+                          </span>
+                          {doc.creator.first_name}
+                        </span>
+                      )}
+                    </div>
                     <div className="kb-card-actions">
                       <button className="btn-consult" onClick={() => { setViewDoc(doc); setCopied(false); setInjected(false) }}>
                         <Eye size={14} /> Consulter
@@ -583,6 +604,50 @@ export default function KnowledgePage() {
                   ))}
                 </div>
               )}
+
+              {/* Contributor + helpful vote */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, padding: "10px 14px", background: "#F9FAFB", borderRadius: 8, border: "1px solid #E5E7EB" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {viewDoc.creator ? (
+                    <>
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#EEF4FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#0066CC" }}>
+                        {viewDoc.creator.first_name[0]}{viewDoc.creator.last_name[0]}
+                      </div>
+                      <div>
+                        <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: "#374151" }}>
+                          {viewDoc.creator.first_name} {viewDoc.creator.last_name}
+                        </p>
+                        <p style={{ margin: 0, fontSize: 11, color: "#9CA3AF" }}>Contributeur · {formatDate(viewDoc.created_at)}</p>
+                      </div>
+                    </>
+                  ) : (
+                    <span style={{ fontSize: 12, color: "#9CA3AF" }}>Contribué le {formatDate(viewDoc.created_at)}</span>
+                  )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 12, color: "#6B7280" }}>Ce document est-il utile ?</span>
+                  <button
+                    onClick={() => handleVote(viewDoc.id, "up")}
+                    style={{
+                      padding: "4px 10px", borderRadius: 8, border: "1px solid",
+                      borderColor: kbVotes[viewDoc.id] === "up" ? "#059669" : "#D1D5DB",
+                      background: kbVotes[viewDoc.id] === "up" ? "#D1FAE5" : "#fff",
+                      color: kbVotes[viewDoc.id] === "up" ? "#059669" : "#6B7280",
+                      cursor: "pointer", fontSize: 13, fontWeight: 600,
+                    }}
+                  >👍</button>
+                  <button
+                    onClick={() => handleVote(viewDoc.id, "down")}
+                    style={{
+                      padding: "4px 10px", borderRadius: 8, border: "1px solid",
+                      borderColor: kbVotes[viewDoc.id] === "down" ? "#DC2626" : "#D1D5DB",
+                      background: kbVotes[viewDoc.id] === "down" ? "#FEE2E2" : "#fff",
+                      color: kbVotes[viewDoc.id] === "down" ? "#DC2626" : "#6B7280",
+                      cursor: "pointer", fontSize: 13, fontWeight: 600,
+                    }}
+                  >👎</button>
+                </div>
+              </div>
 
               <div className="modal-actions">
                 <button

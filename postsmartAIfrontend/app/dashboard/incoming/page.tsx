@@ -14,6 +14,10 @@ import { StatusBadge, PriorityBadge } from "@/components/ui/status-badge"
 import { EmailStatus, EmailPriority, STATUS_CONFIG, ESCALATION_TARGETS } from "@/lib/email-status"
 import EscalationAlert, { type EscalationData } from "@/components/ui/escalation-alert"
 import { getLanguageInfo, detectLanguageHeuristic } from "@/lib/language"
+import ClientHistoryPanel from "@/components/ui/client-history-panel"
+import FeedbackPanel from "@/components/ui/feedback-panel"
+import TemplateSelector from "@/components/ui/template-selector"
+import { detectSentiment, toneToSentiment } from "@/lib/sentiment"
 
 async function exportEmailToPdf(email: Parameters<Awaited<typeof import("@/lib/export-pdf")>["exportEmailToPdf"]>[0]) {
   const { exportEmailToPdf: fn } = await import("@/lib/export-pdf")
@@ -566,10 +570,14 @@ export default function IncomingPage() {
   const [escalationData, setEscalationData] = useState<EscalationData | null>(null)
   const [translating, setTranslating] = useState(false)
   const [onDemandTranslation, setOnDemandTranslation] = useState<{ text: string; lang: string } | null>(null)
+  const [translatingResponse, setTranslatingResponse] = useState(false)
   const translationRef = useRef<HTMLDivElement>(null)
   const [thread, setThread] = useState<Email[]>([])
   const [threadOpen, setThreadOpen] = useState(false)
   const [loadingThread, setLoadingThread] = useState(false)
+  const [sortBy, setSortBy] = useState<"priority" | "date">("priority")
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false)
+  const [templateSelected, setTemplateSelected] = useState(false)
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -586,6 +594,7 @@ export default function IncomingPage() {
       if (TABS.find(t => t.key === tab && t.isSource)) params.set("source", tab)
       if (search) params.set("search", search)
       params.set("per_page", "30")
+      params.set("sort", sortBy)
       const res = await api.get<any>(`/emails?${params}`)
       const items: Email[] = res?.data ?? []
       setEmails(items)
@@ -593,11 +602,11 @@ export default function IncomingPage() {
       setUnreadCount(items.filter(e => e.status === "unread").length)
     } catch { toast.error("Impossible de charger les mails") }
     finally { setLoading(false) }
-  }, [tab, search])
+  }, [tab, search, sortBy])
 
   useEffect(() => { load(); fetchCounts() }, [load])
 
-  // Polling sync toutes les 30s
+  // Polling sync — intervalle de 5 min pour ne pas bloquer le serveur si IMAP est lent
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
@@ -608,7 +617,7 @@ export default function IncomingPage() {
           toast.success(`📬 ${res.count} nouveau(x) mail(s) reçu(s) !`, { duration: 5000 })
         }
       } catch {}
-    }, 30_000)
+    }, 300_000)
     return () => clearInterval(interval)
   }, [])
 
@@ -633,6 +642,23 @@ export default function IncomingPage() {
     }
   }
 
+  async function handleTranslateResponse(targetLang: string, targetLangName: string) {
+    if (!editedBody) return
+    setTranslatingResponse(true)
+    try {
+      const res = await api.post<{ translated_text: string }>("/ai/translate", {
+        text: editedBody,
+        target_lang: targetLang,
+      })
+      setEditedBody(res.translated_text)
+      toast.success(`✅ Réponse traduite en ${targetLangName}`)
+    } catch (e: any) {
+      toast.error("Traduction impossible : " + (e?.message ?? "erreur serveur"))
+    } finally {
+      setTranslatingResponse(false)
+    }
+  }
+
   async function loadThread(email: Email) {
     setLoadingThread(true)
     setThread([])
@@ -652,6 +678,8 @@ export default function IncomingPage() {
     setOnDemandTranslation(null)
     setThread([])
     setThreadOpen(false)
+    setTemplateSelected(false)
+    setShowTemplateSelector(false)
     if (isMobile) setShowDetail(true)
     if (email.status === "unread") {
       try {
@@ -842,7 +870,29 @@ export default function IncomingPage() {
               }}>{unreadCount}</span>
             )}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {/* Sort toggle */}
+            <div style={{ display: "flex", borderRadius: 8, border: "1px solid #E5E7EB", overflow: "hidden" }}>
+              <button
+                onClick={() => setSortBy("priority")}
+                style={{
+                  padding: "4px 9px", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                  background: sortBy === "priority" ? "#00205B" : "#F9FAFB",
+                  color: sortBy === "priority" ? "#fff" : "#6B7280",
+                }}
+                title="Trier par priorité"
+              >🎯</button>
+              <button
+                onClick={() => setSortBy("date")}
+                style={{
+                  padding: "4px 9px", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                  background: sortBy === "date" ? "#00205B" : "#F9FAFB",
+                  color: sortBy === "date" ? "#fff" : "#6B7280",
+                  borderLeft: "1px solid #E5E7EB",
+                }}
+                title="Trier par date"
+              >🕐</button>
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#9CA3AF" }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#059669", display: "inline-block", animation: "pulse 2s infinite" }} />
               {lastSync ? `Sync ${lastSync.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}` : "Auto 30s"}
@@ -946,6 +996,18 @@ export default function IncomingPage() {
                     {email.priority && email.priority !== "normal" && (
                       <PriorityBadge priority={email.priority} size="sm" />
                     )}
+                    {(() => {
+                      const s = detectSentiment(email.body_text)
+                      if (s.level === "neutral") return null
+                      return (
+                        <span title={`Sentiment : ${s.label}`} style={{
+                          fontSize: 10, padding: "1px 6px", borderRadius: 20,
+                          background: s.bg, color: s.color, fontWeight: 600,
+                        }}>
+                          {s.emoji} {s.label}
+                        </span>
+                      )
+                    })()}
                     {email.is_follow_up_overdue && (
                       <span style={{ fontSize: 10, color: "#DC2626", fontWeight: 700 }}>⚠ Suivi en retard</span>
                     )}
@@ -1045,6 +1107,16 @@ export default function IncomingPage() {
               🌍 {aiResult.analysis.language_name}
             </span>
           )}
+          {(() => {
+            const s = aiResult?.analysis?.tone
+              ? (toneToSentiment(aiResult.analysis.tone) ?? detectSentiment(selected.body_text))
+              : detectSentiment(selected.body_text)
+            return (
+              <span style={{ fontSize: 12, padding: "3px 10px", borderRadius: 20, background: s.bg, color: s.color, fontWeight: 600 }}>
+                {s.emoji} {s.label}
+              </span>
+            )
+          })()}
           <span style={{ fontSize: 12, color: "#6B7280" }}>
             {selected.source === "form" ? "📋 Formulaire" : "📧 Email entrant"}
           </span>
@@ -1080,6 +1152,19 @@ export default function IncomingPage() {
         <pre style={{ margin: 0, fontFamily: "inherit", fontSize: 15, lineHeight: 1.7, color: "#1A1A2E", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
           {selected.body_text}
         </pre>
+      </div>
+
+      {/* Historique client */}
+      <div style={{ margin: "12px 16px" }}>
+        <ClientHistoryPanel
+          fromEmail={selected.from_email}
+          fromName={selected.from_name}
+          onSelectEmail={(id) => {
+            if (id !== selected.id) {
+              api.get<Email>(`/emails/${id}`).then(setSelected).catch(() => {})
+            }
+          }}
+        />
       </div>
 
       {/* Pièces jointes */}
@@ -1193,6 +1278,11 @@ export default function IncomingPage() {
         </div>
       )}
 
+      {/* Feedback IA — visible dès qu'une réponse a été générée ou validée */}
+      {(selected.ai_response || selected.validated_response) && (
+        <FeedbackPanel emailId={selected.id} />
+      )}
+
       {/* Alerte escalade automatique */}
       {escalationData && (
         <div style={{ margin: "0 16px 4px" }}>
@@ -1211,12 +1301,21 @@ export default function IncomingPage() {
       )}
 
       {/* AI response panel */}
-      {(aiResult || selected.ai_response) && !analyzing && selected.status !== "resolved" && (
+      {(aiResult || selected.ai_response || templateSelected) && !analyzing && selected.status !== "resolved" && (
         <div style={{ margin: "0 16px 12px", borderRadius: 12, padding: 20, background: "#F8FAFF", border: "1px solid #C7D9F5" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 14 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#FFCC00", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#00205B" }}>IA</div>
-              <span style={{ fontWeight: 700, fontSize: 14, color: "#00205B" }}>Réponse générée par PostSmart IA</span>
+              {templateSelected && !aiResult ? (
+                <>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#EEF4FF", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>📋</div>
+                  <span style={{ fontWeight: 700, fontSize: 14, color: "#00205B" }}>Modèle de réponse sélectionné</span>
+                </>
+              ) : (
+                <>
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#FFCC00", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#00205B" }}>IA</div>
+                  <span style={{ fontWeight: 700, fontSize: 14, color: "#00205B" }}>Réponse générée par PostSmart IA</span>
+                </>
+              )}
             </div>
             <StatusBadge status={selected.status} size="sm" />
           </div>
@@ -1290,6 +1389,42 @@ export default function IncomingPage() {
             }} />
           </div>
 
+          {/* Suggestion multilingue — si le client écrit dans une autre langue */}
+          {editedBody && (() => {
+            const lang = aiResult?.analysis?.detected_language
+              ?? detectLanguageHeuristic(selected.body_text ?? "")
+            if (lang === "fr") return null
+            const info = getLanguageInfo(lang)
+            return (
+              <div style={{
+                marginBottom: 12, padding: "10px 14px", borderRadius: 8,
+                background: "#F0F9FF", border: "1px solid #BAE6FD",
+                display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+              }}>
+                <span style={{ fontSize: 18 }}>{info.flag}</span>
+                <span style={{ fontSize: 13, color: "#075985", flex: 1 }}>
+                  Ce client écrit en <strong>{info.name}</strong> — souhaitez-vous traduire votre réponse ?
+                </span>
+                <button
+                  onClick={() => handleTranslateResponse(lang, info.name)}
+                  disabled={translatingResponse}
+                  style={{
+                    padding: "6px 14px", borderRadius: 8, border: "none",
+                    cursor: translatingResponse ? "wait" : "pointer",
+                    background: "#0369A1", color: "#fff", fontWeight: 600, fontSize: 12,
+                    display: "flex", alignItems: "center", gap: 5,
+                    opacity: translatingResponse ? 0.7 : 1,
+                    flexShrink: 0,
+                  }}
+                >
+                  {translatingResponse
+                    ? <><div style={{ width: 10, height: 10, border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", borderRadius: "50%", animation: "spin 0.65s linear infinite" }} /> Traduction…</>
+                    : `🌍 Répondre en ${info.name}`}
+                </button>
+              </div>
+            )
+          })()}
+
           {/* Audio reader — lecture de la réponse IA */}
           {editedBody && (
             <AudioReader text={editedBody} autoPlay={!!aiResult} />
@@ -1360,6 +1495,13 @@ export default function IncomingPage() {
             <Sparkles size={15} />
             {analyzing ? "Analyse en cours…" : "✨ Analyser & Générer"}
           </button>
+        )}
+        {selected.status !== "resolved" && selected.status !== "archived" && (
+          <button onClick={() => setShowTemplateSelector(true)} style={{
+            padding: "9px 14px", borderRadius: 8, border: "1px solid #0066CC", cursor: "pointer",
+            background: "#EBF4FF", color: "#0066CC", fontWeight: 500, fontSize: 13,
+            display: "flex", alignItems: "center", gap: 5,
+          }}>📋 Modèles</button>
         )}
         {!["resolved","archived","escalated"].includes(selected.status) && (
           <button onClick={() => setActionModal("pending")} style={{
@@ -1503,6 +1645,20 @@ export default function IncomingPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Template selector */}
+      {showTemplateSelector && selected && (
+        <TemplateSelector
+          serviceType={selected.ai_service_type}
+          onSelect={(content) => {
+            setEditedBody(content)
+            setEditedSubject(prev => prev || `Re: ${selected.subject}`)
+            setTemplateSelected(true)
+            setShowTemplateSelector(false)
+          }}
+          onClose={() => setShowTemplateSelector(false)}
+        />
       )}
 
       {/* Modal — Escalader */}

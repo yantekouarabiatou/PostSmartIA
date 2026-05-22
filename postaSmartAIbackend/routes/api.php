@@ -2,6 +2,9 @@
 
 use App\Http\Controllers\AiController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\FeedbackController;
+use App\Http\Controllers\ReportController;
+use App\Http\Controllers\ResponseTemplateController;
 use App\Http\Controllers\CallReportController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DashboardController;
@@ -44,8 +47,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/auth/profile', [AuthController::class, 'updateProfile']);
 
     // Dashboard
-    Route::get('/dashboard',       [DashboardController::class, 'index']);
-    Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
+    Route::get('/dashboard',                   [DashboardController::class, 'index']);
+    Route::get('/dashboard/stats',             [DashboardController::class, 'stats']);
+    Route::get('/dashboard/recurring-topics',  [DashboardController::class, 'recurringTopics']);
 
     // Email History (module génération)
     Route::post('/email-histories/generate',                      [EmailHistoryController::class, 'generate']);
@@ -96,8 +100,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/',    [EmailInboxController::class, 'index']);
 
         // Routes statiques AVANT /{id} pour éviter la capture par le wildcard
-        Route::get('/stats',              [EmailInboxController::class, 'stats']);
-        Route::get('/counts',             [EmailInboxController::class, 'counts']);
+        Route::get('/stats',          [EmailInboxController::class, 'stats']);
+        Route::get('/counts',         [EmailInboxController::class, 'counts']);
+        Route::get('/client-history', [EmailInboxController::class, 'clientHistory']);
         Route::post('/sync',              [EmailInboxController::class, 'sync']);
         Route::get('/thread',             [EmailInboxController::class, 'thread']);
         Route::post('/upload-attachment', [EmailInboxController::class, 'uploadAttachment']);
@@ -116,7 +121,29 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{id}/escalate/acknowledge',  [EmailInboxController::class, 'acknowledgeEscalation']);
         Route::put('/{id}/priority',               [EmailInboxController::class, 'updatePriority']);
         Route::post('/{id}/attachments',           [EmailInboxController::class, 'saveAttachments']);
+        Route::post('/{id}/feedback',              [FeedbackController::class, 'store']);
+        Route::get('/{id}/feedback',               [FeedbackController::class, 'show']);
     });
+
+    // Feedback stats (admin/manager)
+    Route::get('/feedback/stats', [FeedbackController::class, 'stats']);
+
+    // Rapports exportables
+    Route::prefix('reports')->group(function () {
+        Route::get('/data',           [ReportController::class, 'data']);
+        Route::get('/export/excel',   [ReportController::class, 'exportExcel']);
+    });
+
+    // Modèles de réponses
+    Route::get('/templates',             [ResponseTemplateController::class, 'index']);
+    Route::get('/templates/{id}',        [ResponseTemplateController::class, 'show']);
+    Route::post('/templates/{id}/use',   [ResponseTemplateController::class, 'use']);
+    Route::post('/templates',            [ResponseTemplateController::class, 'store']);
+    Route::put('/templates/{id}',        [ResponseTemplateController::class, 'update']);
+    Route::delete('/templates/{id}',     [ResponseTemplateController::class, 'destroy']);
+
+    // Recalcul des priorités (admin)
+    Route::post('/emails/recompute-priorities', [EmailInboxController::class, 'recomputePriorities']);
 
     // Notifications
     Route::get('/notifications',               [NotificationController::class, 'index']);

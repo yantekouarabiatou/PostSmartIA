@@ -44,4 +44,9 @@ class EmailInbox extends Model
     {
         return $this->follow_up_at !== null && $this->follow_up_at->isPast();
     }
+
+    public function validatedByUser(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'validated_by');
+    }
 }

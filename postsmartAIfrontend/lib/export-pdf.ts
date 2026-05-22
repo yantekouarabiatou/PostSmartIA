@@ -585,6 +585,250 @@ export async function exportEmailToPdf(email: EmailRecord): Promise<void> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// RAPPORT STATISTIQUES export
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ReportData {
+  period_label: string
+  generated_at: string
+  kpis: {
+    total_emails: number
+    resolved: number
+    resolution_rate: number
+    escalated: number
+    avg_score: number | null
+    total_feedback: number
+    ai_score: number | null
+  }
+  by_service: Array<{ label: string; total: number }>
+  top_rejection_tags: Array<{ tag: string; count: number }>
+  leaderboard: Array<{ name: string; role: string; emails: number; avg_score: number }>
+}
+
+const TAG_LABELS_FR: Record<string, string> = {
+  ton_incorrect:         "Ton incorrect",
+  information_manquante: "Info manquante",
+  hors_charte:           "Hors charte",
+  trop_long:             "Trop long",
+  trop_formel:           "Trop formel",
+  erreur_factuelle:      "Erreur factuelle",
+  autre:                 "Autre",
+}
+
+export async function exportReportToPdf(report: ReportData): Promise<void> {
+  if (typeof window === "undefined") return
+  const { default: jsPDF } = await import("jspdf")
+
+  const doc   = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
+  const pageW = 210
+  const pageH = 297
+  const left  = 18
+  const right = 18
+  const W     = pageW - left - right
+  const GAP   = 5
+
+  // ── Page 1 ────────────────────────────────────────────────────────────────
+  // Cover header (custom, not chrome)
+  filledRect(doc, 0, 0, pageW, 3, C.yellowMed)
+  filledRect(doc, 0, 3, pageW, 42, C.blueNight)
+
+  setColor(doc, C.white)
+  doc.setFont("helvetica", "bold")
+  doc.setFontSize(18)
+  doc.text("PostSmart IA", left, 18)
+
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(10)
+  setColor(doc, [180, 200, 230] as [number,number,number])
+  doc.text(`Rapport d’activité — ${report.period_label}`, left, 26)
+
+  doc.setFontSize(7.5)
+  setColor(doc, [130, 160, 200] as [number,number,number])
+  doc.text(`Généré le ${report.generated_at}`, left, 33)
+
+  // Yellow accent line
+  setStroke(doc, C.yellowMed)
+  doc.setLineWidth(0.5)
+  doc.line(left, 38, pageW - right, 38)
+
+  let y = 52
+
+  // ── KPI grid (2 × 4) ─────────────────────────────────────────────────────
+  y = sectionHeader(doc, left, y, W, "INDICATEURS CLÉS", C.yellowMed)
+
+  const kpiItems: Array<[string, string, [number,number,number]]> = [
+    ["Emails reçus",        String(report.kpis.total_emails),      C.blueMed],
+    ["Emails résolus",       String(report.kpis.resolved),          [5, 150, 105]],
+    ["Taux résolution",      `${report.kpis.resolution_rate}%`,     report.kpis.resolution_rate >= 75 ? [5,150,105] : [217,119,6]],
+    ["Dossiers escaladés",   String(report.kpis.escalated),         report.kpis.escalated > 0 ? [220,38,38] : [5,150,105]],
+    ["Score qualité IA",     report.kpis.avg_score != null ? `${report.kpis.avg_score}/100` : "—", C.yellowDark],
+    ["Feedbacks collectés",  String(report.kpis.total_feedback),    C.blueMed],
+    ["Score satisfaction IA",report.kpis.ai_score != null ? `${report.kpis.ai_score}%` : "—", report.kpis.ai_score != null && report.kpis.ai_score >= 70 ? [5,150,105] : [217,119,6]],
+    ["Taux non-résolution",  `${100 - report.kpis.resolution_rate}%`, C.grayText],
+  ]
+
+  const colW  = (W - 4) / 2
+  const kpiH  = 16
+  const kpiGap = 2
+  kpiItems.forEach(([label, value, color], i) => {
+    const col = i % 2
+    const row = Math.floor(i / 2)
+    const kx  = left + col * (colW + 4)
+    const ky  = y + row * (kpiH + kpiGap)
+
+    borderedRect(doc, kx, ky, colW, kpiH, C.white, C.grayBorder, 0.2)
+    accentBar(doc, kx, ky, kpiH, color)
+
+    setColor(doc, C.grayText)
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(7)
+    doc.text(label, kx + 4, ky + 5.5)
+
+    setColor(doc, color)
+    doc.setFont("helvetica", "bold")
+    doc.setFontSize(13)
+    doc.text(value, kx + 4, ky + 13)
+  })
+
+  y += 4 * (kpiH + kpiGap) + GAP + 2
+
+  // ── Répartition par service ────────────────────────────────────────────────
+  if (report.by_service.length > 0) {
+    y = sectionHeader(doc, left, y, W, "RÉPARTITION PAR TYPE DE SERVICE", C.blueMed)
+
+    const maxSvc = report.by_service[0]?.total ?? 1
+    const barH   = 5.5
+    const barGap = 2
+    const labelW = 40
+    const valueW = 12
+
+    report.by_service.slice(0, 8).forEach((svc, i) => {
+      const barW = Math.round(((W - labelW - valueW - 6) * svc.total) / maxSvc)
+      const bc: [number,number,number] = i === 0 ? C.blueMed : i === 1 ? [99,102,241] : [148,163,184]
+
+      setColor(doc, C.grayText)
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(7.5)
+      doc.text(svc.label, left, y + barH - 1)
+
+      setFill(doc, C.grayLight)
+      doc.rect(left + labelW, y, W - labelW - valueW, barH, "F")
+      setFill(doc, bc)
+      doc.rect(left + labelW, y, barW, barH, "F")
+
+      setColor(doc, C.blueNight)
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(7.5)
+      doc.text(String(svc.total), left + W - valueW + 2, y + barH - 1)
+
+      y += barH + barGap
+    })
+
+    y += GAP
+  }
+
+  // ── Top tags de rejet ─────────────────────────────────────────────────────
+  if (report.top_rejection_tags.length > 0) {
+    y = sectionHeader(doc, left, y, W, "PRINCIPAUX MOTIFS DE REJET IA", C.yellowMed)
+
+    const maxTag = report.top_rejection_tags[0]?.count ?? 1
+    const tagBarH = 5
+    const tagGap  = 2
+    const tagLW   = 44
+
+    report.top_rejection_tags.slice(0, 6).forEach((t) => {
+      const tagLabel = TAG_LABELS_FR[t.tag] ?? t.tag
+      const bw = Math.round(((W - tagLW - 14) * t.count) / maxTag)
+
+      setColor(doc, C.grayText)
+      doc.setFont("helvetica", "normal")
+      doc.setFontSize(7.5)
+      doc.text(tagLabel, left, y + tagBarH - 1)
+
+      setFill(doc, C.grayLight)
+      doc.rect(left + tagLW, y, W - tagLW - 12, tagBarH, "F")
+      setFill(doc, [124, 58, 237] as [number,number,number])
+      doc.rect(left + tagLW, y, bw, tagBarH, "F")
+
+      setColor(doc, C.blueNight)
+      doc.setFont("helvetica", "bold")
+      doc.setFontSize(7.5)
+      doc.text(String(t.count), left + W - 10, y + tagBarH - 1)
+
+      y += tagBarH + tagGap
+    })
+
+    y += GAP
+  }
+
+  // Footer page 1
+  const fy1 = pageH - 11
+  setStroke(doc, C.grayBorder); doc.setLineWidth(0.3)
+  doc.line(left, fy1, pageW - right, fy1)
+  setColor(doc, C.grayMeta); doc.setFont("helvetica", "normal"); doc.setFontSize(6.5)
+  doc.text("PostSmart IA  —  Document confidentiel  —  La Poste", left, fy1 + 4)
+  doc.text("Page 1", pageW - right, fy1 + 4, { align: "right" })
+  filledRect(doc, 0, pageH - 3, pageW, 3, C.yellowMed)
+
+  // ── Page 2 — Classement conseillers (si données) ───────────────────────────
+  if (report.leaderboard.length > 0) {
+    doc.addPage()
+    filledRect(doc, 0, 0, pageW, 3, C.yellowMed)
+    filledRect(doc, 0, 3, pageW, 28, C.blueNight)
+
+    setColor(doc, C.white)
+    doc.setFont("helvetica", "bold"); doc.setFontSize(14)
+    doc.text("PostSmart IA — Classement conseillers", left, 18)
+    setColor(doc, [130,160,200] as [number,number,number])
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8)
+    doc.text(report.period_label, left, 26)
+
+    let y2 = 40
+    y2 = sectionHeader(doc, left, y2, W, "PERFORMANCE DES CONSEILLERS", C.blueMed)
+
+    // Table header
+    const cols = [60, 28, 28, 28]
+    const headers2 = ["Conseiller", "Rôle", "Mails traités", "Score IA moy."]
+    const colX2 = [left, left + cols[0], left + cols[0] + cols[1], left + cols[0] + cols[1] + cols[2]]
+    filledRect(doc, left, y2, W, 7, C.bluePale)
+    headers2.forEach((h, i) => {
+      setColor(doc, C.blueNight); doc.setFont("helvetica", "bold"); doc.setFontSize(7.5)
+      doc.text(h, colX2[i] + 2, y2 + 5)
+    })
+    y2 += 7
+
+    report.leaderboard.forEach((agent, i) => {
+      const rowBg = i % 2 === 0 ? C.white : C.grayLight
+      filledRect(doc, left, y2, W, 6.5, rowBg)
+      setStroke(doc, C.grayBorder); doc.setLineWidth(0.15)
+      doc.rect(left, y2, W, 6.5, "D")
+
+      const scoreColor: [number,number,number] = agent.avg_score >= 75 ? [5,150,105] : agent.avg_score >= 50 ? [217,119,6] : [220,38,38]
+
+      setColor(doc, C.grayText); doc.setFont("helvetica", "normal"); doc.setFontSize(8)
+      doc.text(String(agent.name ?? ""), colX2[0] + 2, y2 + 4.5)
+      doc.text(String(agent.role ?? ""), colX2[1] + 2, y2 + 4.5)
+      doc.setFont("helvetica", "bold")
+      doc.text(String(agent.emails), colX2[2] + 2, y2 + 4.5)
+      setColor(doc, scoreColor)
+      doc.text(agent.avg_score > 0 ? `${agent.avg_score}/100` : "—", colX2[3] + 2, y2 + 4.5)
+      y2 += 6.5
+    })
+
+    const fy2 = pageH - 11
+    setStroke(doc, C.grayBorder); doc.setLineWidth(0.3)
+    doc.line(left, fy2, pageW - right, fy2)
+    setColor(doc, C.grayMeta); doc.setFont("helvetica", "normal"); doc.setFontSize(6.5)
+    doc.text("PostSmart IA  —  Document confidentiel  —  La Poste", left, fy2 + 4)
+    doc.text("Page 2", pageW - right, fy2 + 4, { align: "right" })
+    filledRect(doc, 0, pageH - 3, pageW, 3, C.yellowMed)
+  }
+
+  const filename = `PostSmartIA_Rapport_${new Date().toISOString().split("T")[0]}.pdf`
+  doc.save(filename)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HISTORY EMAIL export
 // ─────────────────────────────────────────────────────────────────────────────
 export async function exportHistoryEmailToPdf(record: HistoryEmailRecord): Promise<void> {

@@ -11,6 +11,14 @@ class MailboxService
     public function fetchUnreadEmails(): array
     {
         try {
+            // Limite la connexion IMAP à 10s pour ne pas bloquer le serveur PHP
+            if (function_exists('imap_timeout')) {
+                imap_timeout(IMAP_OPENTIMEOUT,  10);
+                imap_timeout(IMAP_READTIMEOUT,  10);
+                imap_timeout(IMAP_WRITETIMEOUT, 10);
+                imap_timeout(IMAP_CLOSETIMEOUT,  5);
+            }
+
             $cm     = new ClientManager(config('imap'));
             $client = $cm->account('default');
 
@@ -72,17 +80,31 @@ class MailboxService
 
     public function syncEmailToDatabase(array $emailData): EmailInbox
     {
-        return EmailInbox::updateOrCreate(
-            ['message_id' => $emailData['id']],
-            [
-                'from_name'   => $emailData['from_name'],
-                'from_email'  => $emailData['from_email'],
-                'subject'     => $emailData['subject'],
-                'body_text'   => $emailData['body_text'],
-                'body_html'   => $emailData['body_html'],
-                'received_at' => $emailData['received_at'],
-                'is_read'     => false,
-            ]
-        );
+        $email = EmailInbox::firstOrNew(['message_id' => $emailData['id']]);
+        $isNew = !$email->exists;
+
+        $email->fill([
+            'from_name'   => $emailData['from_name'],
+            'from_email'  => $emailData['from_email'],
+            'subject'     => $emailData['subject'],
+            'body_text'   => $emailData['body_text'],
+            'body_html'   => $emailData['body_html'],
+            'received_at' => $emailData['received_at'],
+            'is_read'     => false,
+        ]);
+
+        if ($isNew) {
+            $receivedAt      = \Carbon\Carbon::parse($emailData['received_at']);
+            $email->priority = PriorityScoreService::compute(
+                $emailData['subject'],
+                $emailData['body_text'],
+                null,
+                null,
+                $receivedAt,
+            );
+        }
+
+        $email->save();
+        return $email;
     }
 }

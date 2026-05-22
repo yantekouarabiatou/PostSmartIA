@@ -9,6 +9,7 @@ use App\Models\EscalationHistory;
 use App\Services\ActivityLogService;
 use App\Services\HistoryService;
 use App\Services\NotificationService;
+use App\Services\PriorityScoreService;
 use App\Traits\HasAiFallback;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -50,8 +51,15 @@ class EmailInboxController extends Controller
             });
         }
 
-        $emails = $query->orderBy('received_at', 'desc')
-                        ->paginate($request->get('per_page', 20));
+        $sort = $request->get('sort', 'priority');
+        if ($sort === 'priority') {
+            $query->orderByRaw("FIELD(priority, 'urgent', 'high', 'normal', 'low') ASC")
+                  ->orderBy('received_at', 'desc');
+        } else {
+            $query->orderBy('received_at', 'desc');
+        }
+
+        $emails = $query->paginate($request->get('per_page', 20));
 
         return ApiResponse::success($emails, 'Mails récupérés');
     }
@@ -75,6 +83,102 @@ class EmailInboxController extends Controller
 
         $email->update(['is_read' => true, 'status' => $email->status === 'unread' ? 'read' : $email->status]);
         return ApiResponse::success($email, 'Mail marqué comme lu');
+    }
+
+    // ─── Historique client ────────────────────────────────────────────────────
+
+    public function clientHistory(Request $request): JsonResponse
+    {
+        $email = $request->query('email');
+        if (!$email) {
+            return response()->json(['success' => false, 'message' => 'Paramètre email requis'], 422);
+        }
+
+        $emails = EmailInbox::where('from_email', $email)
+            ->orderBy('received_at', 'desc')
+            ->get();
+
+        if ($emails->isEmpty()) {
+            return ApiResponse::success([
+                'client_email'   => $email,
+                'total_contacts' => 0,
+                'is_sensitive'   => false,
+                'sensitivity_reasons' => [],
+                'first_contact'  => null,
+                'last_contact'   => null,
+                'avg_score'      => null,
+                'topics'         => [],
+                'escalation_count' => 0,
+                'timeline'       => [],
+                'from_name'      => null,
+            ], 'Aucun historique trouvé');
+        }
+
+        $escalationCount = $emails->whereIn('status', ['escalated'])->count()
+            + $emails->filter(fn($e) => $e->escalated_to !== null)->count();
+
+        $scores = $emails->whereNotNull('ai_quality_score')
+            ->where('ai_quality_score', '>', 0)
+            ->pluck('ai_quality_score');
+
+        $avgScore = $scores->count() > 0 ? (int) round($scores->average()) : null;
+
+        // Indicateur "client sensible"
+        $sensitivityReasons = [];
+        if ($escalationCount >= 2) $sensitivityReasons[] = 'Historique d\'escalades multiples';
+        if ($avgScore !== null && $avgScore < 60) $sensitivityReasons[] = 'Score de satisfaction faible';
+        if ($emails->count() >= 5) $sensitivityReasons[] = 'Client avec de nombreux contacts';
+        $isSensitive = count($sensitivityReasons) > 0;
+
+        // Sujets récurrents du client
+        $topics = $emails->whereNotNull('ai_service_type')
+            ->groupBy('ai_service_type')
+            ->map(fn($group, $type) => [
+                'type'  => $type,
+                'label' => $this->serviceLabel($type),
+                'count' => $group->count(),
+            ])
+            ->sortByDesc('count')
+            ->values();
+
+        // Timeline
+        $timeline = $emails->map(fn($e) => [
+            'id'           => $e->id,
+            'subject'      => $e->subject,
+            'received_at'  => $e->received_at?->toIso8601String(),
+            'status'       => $e->status,
+            'service_type' => $e->ai_service_type,
+            'quality_score' => $e->ai_quality_score,
+            'escalated'    => $e->escalated_to !== null || $e->status === 'escalated',
+            'source'       => $e->source ?? 'imap',
+        ])->values();
+
+        return ApiResponse::success([
+            'client_email'        => $email,
+            'from_name'           => $emails->first()->from_name,
+            'total_contacts'      => $emails->count(),
+            'is_sensitive'        => $isSensitive,
+            'sensitivity_reasons' => $sensitivityReasons,
+            'first_contact'       => $emails->last()->received_at?->toIso8601String(),
+            'last_contact'        => $emails->first()->received_at?->toIso8601String(),
+            'avg_score'           => $avgScore,
+            'topics'              => $topics,
+            'escalation_count'    => $escalationCount,
+            'timeline'            => $timeline,
+        ], 'Historique client récupéré');
+    }
+
+    private function serviceLabel(string $type): string
+    {
+        return match ($type) {
+            'reclamation'        => 'Réclamations',
+            'suivi_colis'        => 'Suivi colis',
+            'info_offre'         => 'Info offres',
+            'escalade_mediateur' => 'Escalades',
+            'handicap'           => 'Accessibilité',
+            'formulaire'         => 'Formulaires',
+            default              => 'Autres',
+        };
     }
 
     // ─── Analyse IA ──────────────────────────────────────────────────────────
@@ -419,6 +523,22 @@ class EmailInboxController extends Controller
 
         $email->update(['priority' => $request->priority]);
         return ApiResponse::success($email->fresh(), 'Priorité mise à jour.');
+    }
+
+    public function recomputePriorities(): JsonResponse
+    {
+        $emails = EmailInbox::whereNotIn('status', ['resolved', 'archived'])->get();
+        foreach ($emails as $email) {
+            $priority = PriorityScoreService::compute(
+                $email->subject,
+                $email->body_text,
+                $email->ai_service_type,
+                $email->status,
+                $email->received_at,
+            );
+            $email->update(['priority' => $priority]);
+        }
+        return ApiResponse::success(['updated' => $emails->count()], 'Priorités recalculées');
     }
 
     // ─── Sync IMAP ───────────────────────────────────────────────────────────
