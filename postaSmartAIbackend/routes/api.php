@@ -19,6 +19,11 @@ use App\Http\Controllers\SearchController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 
+// ─── Health check (pour UptimeRobot) ────────────────────────────────────────
+Route::get('/health', function () {
+    return response()->json(['status' => 'ok']);
+});
+
 // ─── Test Gemini (public) ────────────────────────────────────────────────────
 Route::get('/test-gemini', function () {
     try {

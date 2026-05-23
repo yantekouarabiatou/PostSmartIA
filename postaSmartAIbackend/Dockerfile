@@ -20,4 +20,4 @@ COPY .docker/apache.conf /etc/apache2/sites-available/000-default.conf
 
 EXPOSE 80
 
-CMD php artisan migrate --force && php artisan config:cache && php artisan route:cache && php artisan view:cache && apache2-foreground
+CMD php artisan migrate --force && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan optimize && apache2-foreground
