@@ -19,6 +19,7 @@ class EmailInbox extends Model
         'internal_note', 'follow_up_at', 'escalated_to',
         'resolved_points', 'open_points', 'priority',
         'attachments',
+        'escalated_to_user_id',
     ];
 
     protected $appends = ['is_follow_up_overdue'];

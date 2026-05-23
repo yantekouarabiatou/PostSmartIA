@@ -45,16 +45,16 @@ class EmailInboxController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('subject',    'like', "%{$search}%")
-                  ->orWhere('from_name',  'like', "%{$search}%")
-                  ->orWhere('from_email', 'like', "%{$search}%")
-                  ->orWhere('body_text',  'like', "%{$search}%");
+                    ->orWhere('from_name',  'like', "%{$search}%")
+                    ->orWhere('from_email', 'like', "%{$search}%")
+                    ->orWhere('body_text',  'like', "%{$search}%");
             });
         }
 
         $sort = $request->get('sort', 'priority');
         if ($sort === 'priority') {
-            $query->orderByRaw("FIELD(priority, 'urgent', 'high', 'normal', 'low') ASC")
-                  ->orderBy('received_at', 'desc');
+            $query->orderByRaw("CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 WHEN 'low' THEN 4 ELSE 5 END ASC")
+                ->orderBy('received_at', 'desc');
         } else {
             $query->orderBy('received_at', 'desc');
         }
@@ -334,9 +334,9 @@ class EmailInboxController extends Controller
 
         try {
             Mail::to($email->from_email)->send(new ClientResponseMail(
-                clientName:  $email->from_name ?? '',
-                subject:     $request->subject,
-                body:        $request->body,
+                clientName: $email->from_name ?? '',
+                subject: $request->subject,
+                body: $request->body,
                 advisorName: auth()->user()->full_name,
             ));
 
@@ -650,9 +650,15 @@ class EmailInboxController extends Controller
         $emails = EmailInbox::where('from_email', $request->email)
             ->orderBy('received_at', 'desc')
             ->select([
-                'id', 'subject', 'body_text', 'received_at',
-                'status', 'ai_service_type', 'validated_at',
-                'ai_quality_score', 'is_read',
+                'id',
+                'subject',
+                'body_text',
+                'received_at',
+                'status',
+                'ai_service_type',
+                'validated_at',
+                'ai_quality_score',
+                'is_read',
             ])
             ->limit(20)
             ->get();

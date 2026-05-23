@@ -95,17 +95,35 @@ class DashboardController extends Controller
 
         // ── Activité 7 jours ──────────────────────────────────────────────────
 
-        $last7Days = collect(range(6, 0))->map(function ($diff) use ($user) {
+        $since7 = now()->subDays(6)->startOfDay();
+
+        $emailsByDay = EmailInbox::where('validated_by', $user->id)
+            ->where('validated_at', '>=', $since7)
+            ->selectRaw('DATE(validated_at) as day, count(*) as cnt')
+            ->groupBy('day')
+            ->pluck('cnt', 'day');
+
+        $callsByDay = CallReport::where('user_id', $user->id)
+            ->where('created_at', '>=', $since7)
+            ->selectRaw('DATE(created_at) as day, count(*) as cnt')
+            ->groupBy('day')
+            ->pluck('cnt', 'day');
+
+        $pendingByDay = EmailInbox::where('created_at', '>=', $since7)
+            ->whereNotIn('status', ['resolved', 'archived'])
+            ->selectRaw('DATE(created_at) as day, count(*) as cnt')
+            ->groupBy('day')
+            ->pluck('cnt', 'day');
+
+        $last7Days = collect(range(6, 0))->map(function ($diff) use ($emailsByDay, $callsByDay, $pendingByDay) {
             $date = now()->subDays($diff);
+            $key  = $date->toDateString();
             return [
                 'date'    => $date->format('d/m'),
                 'day'     => $date->locale('fr')->dayName,
-                'emails'  => EmailInbox::where('validated_by', $user->id)
-                    ->whereDate('validated_at', $date)->count(),
-                'calls'   => CallReport::where('user_id', $user->id)
-                    ->whereDate('created_at', $date)->count(),
-                'pending' => EmailInbox::whereDate('created_at', $date)
-                    ->whereNotIn('status', ['resolved', 'archived'])->count(),
+                'emails'  => (int) ($emailsByDay[$key] ?? 0),
+                'calls'   => (int) ($callsByDay[$key] ?? 0),
+                'pending' => (int) ($pendingByDay[$key] ?? 0),
             ];
         });
 
@@ -140,21 +158,29 @@ class DashboardController extends Controller
 
         $leaderboard = [];
         if ($isAdmin) {
-            $leaderboard = User::where('is_active', true)
+            $users = User::where('is_active', true)
                 ->whereIn('role', ['conseiller', 'manager'])
+                ->get();
+
+            $userIds = $users->pluck('id');
+
+            $emailStats = EmailInbox::whereIn('validated_by', $userIds)
+                ->whereIn('status', ['resolved', 'archived'])
+                ->selectRaw('validated_by, count(*) as emails_count, AVG(CASE WHEN ai_quality_score > 0 THEN ai_quality_score END) as avg_score')
+                ->groupBy('validated_by')
                 ->get()
-                ->map(function ($u) {
-                    $emailsCount = EmailInbox::where('validated_by', $u->id)
-                        ->whereIn('status', ['resolved', 'archived'])
-                        ->count();
+                ->keyBy('validated_by');
 
-                    $scores = EmailInbox::where('validated_by', $u->id)
-                        ->whereNotNull('ai_quality_score')
-                        ->where('ai_quality_score', '>', 0)
-                        ->pluck('ai_quality_score');
+            $callStats = CallReport::whereIn('user_id', $userIds)
+                ->selectRaw('user_id, count(*) as calls_count')
+                ->groupBy('user_id')
+                ->pluck('calls_count', 'user_id');
 
-                    $avgScore = $scores->count() > 0 ? (int) round($scores->average()) : 0;
-                    $callsCount = CallReport::where('user_id', $u->id)->count();
+            $leaderboard = $users->map(function ($u) use ($emailStats, $callStats) {
+                    $eStats      = $emailStats->get($u->id);
+                    $emailsCount = (int) ($eStats->emails_count ?? 0);
+                    $avgScore    = $eStats ? (int) round($eStats->avg_score ?? 0) : 0;
+                    $callsCount  = (int) ($callStats->get($u->id) ?? 0);
 
                     $initial1 = strtoupper(substr($u->first_name ?? '', 0, 1));
                     $initial2 = strtoupper(substr($u->last_name  ?? '', 0, 1));
@@ -375,17 +401,31 @@ class DashboardController extends Controller
             ->values();
 
         // ── Évolution temporelle (7 ou 30 jours) ─────────────────────────────
-        $days     = $period === 'week' ? 7 : ($period === 'quarter' ? 13 : 30);
-        $timeline = collect(range($days - 1, 0))->map(function ($i) use ($period) {
-            $date  = $period === 'quarter' ? now()->subWeeks($i) : now()->subDays($i);
-            $start = $period === 'quarter' ? $date->copy()->startOfWeek() : $date->copy()->startOfDay();
-            $end   = $period === 'quarter' ? $date->copy()->endOfWeek()   : $date->copy()->endOfDay();
-            $count = EmailInbox::whereBetween('received_at', [$start, $end])->count();
-            return [
-                'label' => $period === 'quarter' ? 'S' . $date->weekOfYear : $date->format('d/m'),
-                'count' => $count,
-            ];
-        })->values();
+        $days = $period === 'week' ? 7 : ($period === 'quarter' ? 13 : 30);
+
+        if ($period === 'quarter') {
+            $timelineRaw = EmailInbox::where('received_at', '>=', now()->subWeeks($days - 1)->startOfWeek())
+                ->selectRaw('EXTRACT(ISOYEAR FROM received_at) as yr, EXTRACT(WEEK FROM received_at) as wk, count(*) as cnt')
+                ->groupBy('yr', 'wk')
+                ->get()
+                ->keyBy(fn($r) => ((int) $r->yr) . '-' . str_pad((int) $r->wk, 2, '0', STR_PAD_LEFT));
+
+            $timeline = collect(range($days - 1, 0))->map(function ($i) use ($timelineRaw) {
+                $date = now()->subWeeks($i);
+                $key  = $date->year . '-' . str_pad($date->weekOfYear, 2, '0', STR_PAD_LEFT);
+                return ['label' => 'S' . $date->weekOfYear, 'count' => (int) ($timelineRaw[$key]->cnt ?? 0)];
+            })->values();
+        } else {
+            $timelineRaw = EmailInbox::where('received_at', '>=', now()->subDays($days - 1)->startOfDay())
+                ->selectRaw('DATE(received_at) as day, count(*) as cnt')
+                ->groupBy('day')
+                ->pluck('cnt', 'day');
+
+            $timeline = collect(range($days - 1, 0))->map(function ($i) use ($timelineRaw) {
+                $date = now()->subDays($i);
+                return ['label' => $date->format('d/m'), 'count' => (int) ($timelineRaw[$date->toDateString()] ?? 0)];
+            })->values();
+        }
 
         return ApiResponse::success([
             'period'        => $period,
