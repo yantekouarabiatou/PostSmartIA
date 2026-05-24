@@ -134,7 +134,7 @@ class FeedbackController extends Controller
         $improvementScore = $total > 0 ? round(($positive / $total) * 100) : null;
 
         // Feedbacks récents avec correction (pour les managers)
-        $recentCorrections = AiFeedback::with(['email:id,subject,from_email', 'user:id,name'])
+        $recentCorrections = AiFeedback::with(['email:id,subject,from_email', 'user:id,first_name,last_name'])
             ->whereNotNull('correction')
             ->where('correction', '!=', '')
             ->where('created_at', '>=', $since)
@@ -146,7 +146,7 @@ class FeedbackController extends Controller
                 'email_id'    => $f->email_inbox_id,
                 'subject'     => $f->email->subject ?? null,
                 'from_email'  => $f->email->from_email ?? null,
-                'user'        => $f->user->name ?? null,
+                'user'        => $f->user ? ($f->user->full_name ?? trim($f->user->first_name . ' ' . $f->user->last_name)) : null,
                 'correction'  => $f->correction,
                 'created_at'  => $f->created_at,
             ]);
